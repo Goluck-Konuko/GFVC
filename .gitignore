@@ -1,0 +1,16 @@
+dataset/*
+experiment/*
+slurm/*
+logs_slurm/*
+
+
+source/GFVC/*/checkpoint/*.pth.tar
+
+
+source/RDAC+*
+source/GFVC/RDAC+
+
+source/CDAC+*
+source/GFVC/CDAC+
+# source/vtm
+# source/anchors
