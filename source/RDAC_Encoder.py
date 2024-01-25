@@ -9,20 +9,28 @@ from argparse import ArgumentParser
 from skimage.transform import resize
 from arithmetic.value_encoder import *
 from arithmetic.value_decoder import *
+from image_codecs.lic import LICEnc
 from GFVC.RDAC.animate import normalize_kp
 from GFVC.RDAC.metric_utils import eval_metrics
 from GFVC.RDAC.entropy_coders.residual_entropy_coder import ResEntropyCoder
 
 
 class ReferenceImageCoder:
-    def __init__(self, dir_enc:str, qp:int=22, height: int=256, width: int=256, format='YUV420') -> None:
+    def __init__(self,dir_enc:str, qp:int=22, 
+                 height: int=256, width: int=256, 
+                 format='YUV420',enc_name:str='vtm',model_name='cheng2020attn', device='cpu') -> None:
+        self.enc_name= enc_name #[vtm, lic]
         self.dir_enc = dir_enc
         self.qp = qp
+        self.device=device
         self.height= height
         self.width = width
         self.format = format
-
-    def compress_reference_yuv(self,reference_frame: np.ndarray, frame_idx: int) -> np.ndarray:
+        if self.enc_name == 'lic':
+            self.lic_codec = LICEnc(self.dir_enc,model_name=model_name, quality=self.qp, device=self.device)
+        else:
+            self.lic_codec = None
+    def vtm_compress_reference_yuv(self,reference_frame: np.ndarray, frame_idx: int) -> np.ndarray:
         # Compress the reference frame in YUV format and return the decoded image 
         # and number of encoded bits
         # write ref and cur (rgb444) to file (yuv420)
@@ -33,7 +41,7 @@ class ReferenceImageCoder:
         img_input_yuv.tofile(f_temp)
         f_temp.close()            
 
-        os.system("./vtm/encode.sh "+self.dir_enc+'frame'+frame_idx_str+" "+str(self.qp)+" "+str(self.width)+" "+str(self.height))   ########################
+        os.system("./image_codecs/vtm/encode.sh "+self.dir_enc+'frame'+frame_idx_str+" "+str(self.qp)+" "+str(self.width)+" "+str(self.height))   ########################
 
         bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
         bits=os.path.getsize(bin_file)*8
@@ -45,7 +53,7 @@ class ReferenceImageCoder:
         img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1   
         return img_rec, bits             
                 
-    def compress_reference_rgb(self,reference_frame: np.ndarray, frame_idx)->np.ndarray:
+    def vtm_compress_reference_rgb(self,reference_frame: np.ndarray, frame_idx)->np.ndarray:
         frame_idx_str = str(frame_idx)
         f_temp=open(self.dir_enc+'frame'+frame_idx_str+'_org.rgb','w')
         img_input_rgb = cv2.merge(reference_frame)
@@ -53,7 +61,7 @@ class ReferenceImageCoder:
         img_input_rgb.tofile(f_temp)
         f_temp.close()
 
-        os.system("./vtm/encode_rgb444.sh "+self.dir_enc+'frame'+frame_idx_str+" "+self.qp+" "+str(self.width)+" "+str(self.height))   ########################
+        os.system("./image_codecs/vtm/encode_rgb444.sh "+self.dir_enc+'frame'+frame_idx_str+" "+self.qp+" "+str(self.width)+" "+str(self.height))   ########################
         bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
         bits=os.path.getsize(bin_file)*8
         
@@ -63,10 +71,22 @@ class ReferenceImageCoder:
         return img_rec, bits
 
     def compress_reference(self, reference_frame:np.ndarray, frame_idx:int)->np.ndarray:
-        if self.format == 'YUV420':
-            img_rec, bits = self.compress_reference_yuv(reference_frame, frame_idx)
-        else:
-            img_rec, bits = self.compress_reference_rgb(reference_frame, frame_idx)
+        if self.enc_name == 'vtm':
+            if self.format == 'YUV420':
+                img_rec, bits = self.vtm_compress_reference_yuv(reference_frame, frame_idx)
+            else:
+                img_rec, bits = self.vtm_compress_reference_rgb(reference_frame, frame_idx)
+        elif self.enc_name == 'lic':
+            #Use Cheng2020_attn model to compress
+            #be sure to set qp value between 1-6
+            ref_fr = to_tensor(np.array(reference_frame)/255)
+            # print(ref_fr.shape)
+            # reference_frame = resize(cv2.merge(reference_frame), (3, self.height, self.width))
+            # reference_frame = to_tensor(reference_frame)
+            # print(reference_frame)
+            dec_info = self.lic_codec.compress(ref_fr,frame_idx)
+            img_rec = dec_info['x_hat']
+            bits = dec_info['bits']
         return img_rec, bits
 
 class AverageMeter:
@@ -84,7 +104,7 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
 
-class Adaptive_Animator:
+class AdaptiveEncoder:
     def __init__(self,res_out_path, adaptive_metric='psnr',adaptive_thresh=30,res_coding_params:Dict[str, Any] = None,  device: str='cpu') -> None:
         self.cpu = True
         self.res_coding_params = res_coding_params
@@ -101,7 +121,7 @@ class Adaptive_Animator:
         self.avg_quality = AverageMeter()
 
         # Evaluation Buffer
-        self.reference_frames_idx = [0]
+        self.reference_frames_idx = []
         self.current_reference_frame_info: Dict[str, Any] = None
 
         #Models
@@ -109,7 +129,8 @@ class Adaptive_Animator:
 
         #Residual Entropy coder
         # self.res_coder = ResCoder(res_out_path,q_step=res_coding_params['rq_step'])
-        self.res_coder = ResEntropyCoder(out_path=res_out_path,q_step=res_coding_params['rq_step'])
+        self.res_out_path = res_out_path
+        self.res_coder = ResEntropyCoder(out_path=res_out_path)
         self.prev_latent, self.res_hat_prev = None, None
 
     def generate_animation(self, reference_frame: torch.Tensor, kp_target: Dict[str, torch.Tensor], kp_reference: Dict[str, torch.Tensor])->torch.Tensor:
@@ -125,54 +146,43 @@ class Adaptive_Animator:
                            kp_driving_initial=kp_reference, use_relative_movement=relative,
                            use_relative_jacobian=relative, adapt_movement_scale=adapt_movement_scale)
     
-    def evaluate(self, inter_frame:torch.Tensor, kp_inter_frame: Dict[str, torch.Tensor], frame_idx:int)->Dict[str, Any]:
+    def evaluate(self, target_frame:torch.Tensor, kp_inter_frame: Dict[str, torch.Tensor], frame_idx:int)->Dict[str, Any]:
         #Animate with the current reference and evaluate quality
         #If quality is above threshold, then signal to encode the inter_frame KPs
         #Else signal this interframe as the new reference.
-        anim_frame = self.get_prediction(self.current_reference_frame_info['reference'],inter_frame,
-                                                       kp_inter_frame, self.current_reference_frame_info['kp_reference'])
+        anim_frame = self.get_prediction(self.current_reference_frame_info['reference'],
+                                         inter_frame, kp_inter_frame, 
+                                         self.current_reference_frame_info['kp_reference'])
 
         #compress the residual
-        frame_residual = inter_frame - anim_frame
+        frame_residual = target_frame - anim_frame
         # if self.res_hat_prev is not None:
         #     #We encode a temporal residual
         #     temporal_frame_residual = frame_residual-self.res_hat_prev
-        #     res_latent, skip = self.generator.tdc.ae_compress(temporal_frame_residual, prev_latent=self.prev_latent, **self.res_coding_params)
+        #     res_info, skip = self.generator.tdc.rans_compress(temporal_frame_residual, prev_latent=self.prev_latent, **self.res_coding_params)
         #     #We need to check that the entropy coder doesn't use the latent representation
         #     # of a spatial residual to encode the temporal residual
-        #     if self.res_coder.first_temporal:
-        #         self.res_coder.previous_res = None
-        #         #The next temporal residual can use existing samples to predict 
-        #         # what follows
-        #         self.res_coder.first_temporal = False 
+        #     # if self.res_coder.first_temporal:
+        #     #     self.res_coder.previous_res = None
+        #     #     #The next temporal residual can use existing samples to predict 
+        #     #     # what follows
+        #     #     self.res_coder.first_temporal = False 
 
         # else:
         #We encode a spatial residual
-        res_latent, skip = self.generator.sdc.ae_compress(frame_residual, prev_latent=self.prev_latent, **self.res_coding_params)
-        self.res_coder.first_temporal = True
+        res_info, skip = self.generator.sdc.rans_compress(frame_residual, prev_latent=self.prev_latent, **self.res_coding_params)
+        
         res_bits = 0
         if not skip:
             #flatten res_latent and compress to binary file
-            res_info = self.res_coder.encode_res(res_latent,frame_idx)
-            res_bits += res_info['bits']
-            res_latent_hat = torch.tensor(res_info['res_latent_hat'], dtype=torch.float32).to(self.device)
-            res_latent_hat = res_latent_hat.reshape(res_latent.shape)
+            write_bitstring(res_info['bitstring'], self.res_out_path, frame_idx) #res_info['bits'] #res_info['bits']
+            dec_info, res_bits = read_bitstring(self.res_out_path, frame_idx)
+            res_hat, res_latent_hat = self.generator.sdc.rans_decompress(dec_info['strings'],dec_info['shape'], **self.res_coding_params)
             self.prev_latent = res_latent_hat
             # if self.res_hat_prev is not None:
-            #     temporal_res_hat = self.generator.tdc.ae_decompress(res_latent_hat,
-            #                                             rate_idx=self.res_coding_params['rate_idx'],
-            #                                             q_value=self.res_coding_params['q_value'])
-            #     res_hat = temporal_res_hat + self.res_hat_prev
+            #     self.res_hat_prev = res_info['res_hat'] + self.res_hat_prev #Update the frame residual used in reconstruction
             # else:
-            res_hat = self.generator.sdc.ae_decompress(res_latent_hat,
-                                                    rate_idx=self.res_coding_params['rate_idx'],
-                                                    q_value=self.res_coding_params['q_value'])
             self.res_hat_prev = res_hat #Update the frame residual used in reconstruction
-            self.res_coder.metadata.append(1)
-        else:
-            self.res_coder.metadata.append(0) #Flag that this residual skipped
-        #     prediction = anim_frame + res_hat
-        # else:
         #Skip residual coding and use previously decoded residual
         prediction = anim_frame + self.res_hat_prev
         
@@ -180,6 +190,7 @@ class Adaptive_Animator:
 
         self.avg_quality.update(pred_quality)
         avg_quality = self.avg_quality.avg
+        # print(pred_quality, avg_quality, res_bits)
         if self.adaptive_metric in ['psnr', 'ms_ssim', 'fsim'] and avg_quality >= self.thresh:
             #We have a winner! : encode the keypoints
             return anim_frame, kp_inter_frame, True, res_bits
@@ -187,7 +198,6 @@ class Adaptive_Animator:
             #We have a winner! : encode the keypoints
             return anim_frame, kp_inter_frame, True, res_bits
         else:
-            self.reference_frames_idx.append(frame_idx) #The current interframe will be the next reference frame
             return anim_frame, kp_inter_frame, False, res_bits
 
 class KPCoder:
@@ -269,6 +279,9 @@ if __name__ == "__main__":
     parser.add_argument("--Iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=30, type=float,help="Reference selection threshold")
+    parser.add_argument("--rate_idx", default=0, type=int,help="The RD point for coding the frame residuals [1-5]")
+    parser.add_argument("--int_value", default=0.0, type=float,help="Interpolation value between RD points for residual coding [0.0 - 1.0]")
+    parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     opt = parser.parse_args()
     
@@ -276,17 +289,22 @@ if __name__ == "__main__":
     frames=int(opt.encoding_frames)
     width=opt.seq_width
     height=opt.seq_width
-    Qstep=opt.quantization_factor
-    QP=opt.Iframe_QP
+    Qstep=opt.quantization_factor #KP coding 
+    QP=opt.Iframe_QP #Reference frame coding
     original_seq=opt.original_seq
     Iframe_format=opt.Iframe_format
+    ######
+    # residual coding params
+    rate_idx = opt.rate_idx
+    int_value = opt.int_value
+    gop_size = opt.gop_size
+    ######
     device = opt.device
     if device =='cuda' and torch.cuda.is_available():
         cpu = False
     else:
         cpu = True
         device = 'cpu'
-    
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
 
     ## RDAC
@@ -298,7 +316,6 @@ if __name__ == "__main__":
     
     ## Load config parameters
     config_params = read_config_file(RDAC_config_path)
-    rate_idx = config_params['residual_coding_params']['rate_idx']
     ###################
     start=time.time()
     kp_output_dir =model_dirname+'/kp/'+seq+'_QP'+str(QP)+'_RQP' +str(rate_idx)+'/'     
@@ -316,35 +333,42 @@ if __name__ == "__main__":
     seq_kp_integer = []
     sum_bits = 0
 
-    image_coder = ReferenceImageCoder(dir_enc=dir_enc, qp=QP, height=height,
-                                      width=width, format=Iframe_format)
+    image_coder = ReferenceImageCoder(dir_enc=dir_enc, qp=int(QP), height=height,
+                                      width=width, format=Iframe_format,enc_name='lic',device='cpu') #Always the run the autoregressive models on CPU
+    
+
     
     kp_coder = KPCoder(kp_output_dir=kp_output_dir,q_step=Qstep)
 
     #Adaptive reference info
-    adaptive_animator = Adaptive_Animator(res_output_dir, adaptive_metric=opt.adaptive_metric, 
+    adaptive_animator = AdaptiveEncoder(res_output_dir, adaptive_metric=opt.adaptive_metric, 
                                           adaptive_thresh=opt.adaptive_thresh,
-                                          res_coding_params=config_params['residual_coding_params'],
+                                          res_coding_params={'rate_idx':rate_idx,'q_value':int_value},
                                           device=device)
 
     #Coding loop
+    tot_kp_bits = 0
     for frame_idx in tqdm(range(0, frames)):            
         frame_idx_str = str(frame_idx).zfill(4)  
         current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]] 
-        if frame_idx == 0:      # The first frame must be an I-frame      
+        if frame_idx == 0 or frame_idx%gop_size==0:      # The first frame must be an I-frame      
+            adaptive_animator.reference_frames_idx.append(frame_idx)
+            adaptive_animator.res_coder.metadata.append(0)
             img_rec, ref_bits = image_coder.compress_reference(current_frame,frame_idx)                         
             sum_bits += ref_bits
             with torch.no_grad(): 
-                reference = to_tensor(img_rec).to(device)    # require GPU | changed to use the available device
+                if not isinstance(img_rec, torch.Tensor):
+                    reference = to_tensor(img_rec).to(device)    # require GPU | changed to use the available device
+                else:
+                    reference = img_rec.detach().clone().to(device)
                 kp_reference = RDAC_Analysis_Model(reference)
-                
                 kp_value_frame = compress_motion_keypoints(kp_reference, frame_idx_str, kp_output_dir)  
                 kp_coder.rec_sem.append(kp_value_frame)  
                 
                 #Update the adaptive coder
                 ref_info = {'reference': reference,'kp_reference':kp_reference, 'frame_idx':frame_idx}
                 adaptive_animator.current_reference_frame_info = ref_info
-            
+                adaptive_animator.res_hat_prev = None
         else: #Subsequent frames can be encoded as inter_frames if they meet the adaptation threshold
             inter_frame = cv2.merge(current_frame)
             inter_frame = resize(inter_frame, (width, height))[..., :3]
@@ -356,17 +380,26 @@ if __name__ == "__main__":
                 ## Animate the target frame and evaluate the quality
                 anim_prediction, kp_inter_frame, encode, res_bits = adaptive_animator.evaluate(inter_frame, kp_inter_frame, frame_idx)
                 sum_bits += res_bits
+                # print("Res bits: ",res_bits)
                 ## ------------------------
                 if encode:
                     kp_value_frame = compress_motion_keypoints(kp_inter_frame, frame_idx_str, kp_output_dir)
                     kp_bits = kp_coder.encode_kp(kp_value_frame, frame_idx) 
                     sum_bits += kp_bits 
+                    tot_kp_bits += kp_bits
+                    adaptive_animator.res_coder.metadata.append(1)
+                    # print("KP bits: ", kp_bits)
                 else:
                     #Adding this target to buffer and compressing it as a new reference
                     #compress the current frame and transmit as the latest reference
+                    adaptive_animator.reference_frames_idx.append(frame_idx)
                     img_rec, ref_bits = image_coder.compress_reference(current_frame,frame_idx)
                      
-                    new_reference = to_tensor(img_rec).to(device)
+                    if not isinstance(img_rec, torch.Tensor):
+                        new_reference = to_tensor(img_rec).to(device)    # require GPU | changed to use the available device
+                    else:
+                        new_reference = img_rec.detach().clone()
+                    
                     kp_new_reference = RDAC_Analysis_Model(new_reference)
                     
                     kp_value_frame = compress_motion_keypoints(kp_new_reference, frame_idx_str, kp_output_dir)
@@ -374,13 +407,18 @@ if __name__ == "__main__":
 
                     ref_info = {'reference': new_reference,'kp_reference':kp_new_reference, 'frame_idx':frame_idx}
                     adaptive_animator.current_reference_frame_info = ref_info
+                    adaptive_animator.res_coder.metadata.append(0)
                     sum_bits += ref_bits 
+                    # print("Ref bits: ", ref_bits)
 
     #Write any metadata here and finish the coding process
-    sum_bits += kp_coder.encode_metadata(adaptive_animator.reference_frames_idx)
-
+    m_kp_bits = kp_coder.encode_metadata(adaptive_animator.reference_frames_idx)
+    # print("KP metadata: ", m_kp_bits, 'bits')
+    sum_bits += m_kp_bits
     #Encode residual metadata
-    sum_bits += adaptive_animator.res_coder.encode_metadata()
+    m_res_bits = adaptive_animator.res_coder.encode_metadata()
+    # print("Res metadata: ", m_res_bits, 'bits')
+    sum_bits += m_res_bits
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   
 

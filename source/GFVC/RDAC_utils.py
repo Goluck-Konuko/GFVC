@@ -1,8 +1,11 @@
 import matplotlib
 matplotlib.use('Agg')
+import os
+import re
 import yaml
 import torch
 import numpy as np
+from typing import Dict, Any
 from GFVC.RDAC.animate import normalize_kp
 from GFVC.RDAC.modules.generator import GeneratorRDAC ###
 from GFVC.RDAC.modules.keypoint_detector import KPDetector
@@ -59,6 +62,43 @@ def make_RDAC_prediction(reference_frame, kp_reference, kp_current, generator,re
 
 
 
+def write_bitstring(enc_info:Dict[str,Any], dec_dir:str, frame_idx:int)->float:
+    strings = enc_info['strings']
+    shape = f"{enc_info['shape'][0]}_{enc_info['shape'][1]}_"
+    out_path = dec_dir+'/'+shape+str(frame_idx)
+    y_string = strings[0][0]
+    z_string = strings[1][0]
+
+    #write both strings to binary file
+    with open(f"{out_path}_y.bin", 'wb') as y:
+        y.write(y_string)
+    bits = os.path.getsize(f"{out_path}_y.bin")*8
+    with open(f"{out_path}_z.bin", 'wb') as z:
+        z.write(z_string)
+    bits += os.path.getsize(f"{out_path}_z.bin")*8
+    return bits
+
+
+def read_bitstring(dec_dir:str, frame_idx:int):
+    #locate the correct files in the dec_dir
+    #The process is clumsy but should work for now
+    bin_files = [x for x in os.listdir(dec_dir) if x.endswith('.bin')]
+    y_pattern = re.compile(r'_{}_y\.bin'.format(frame_idx))
+    z_pattern = re.compile(r'_{}_z\.bin'.format(frame_idx))
+    y_file = [file for file in bin_files if y_pattern.search(file)][-1]
+    z_file = [file for file in bin_files if z_pattern.search(file)][-1]
+
+    rec_shape = y_file.split("_")
+    shape = [int(rec_shape[0]), int(rec_shape[0])]
+    with open(f"{dec_dir}/{y_file}", 'rb') as y_out:
+        y_string = y_out.read()
+    bits = os.path.getsize(f"{dec_dir}/{y_file}")*8
+
+    with open(f"{dec_dir}/{z_file}", 'rb') as z_out:
+        z_string = z_out.read()
+    bits += os.path.getsize(f"{dec_dir}/{z_file}")*8
+    dec_info = {'strings': [[y_string],[z_string]], 'shape':shape}
+    return dec_info, bits
 
 
 

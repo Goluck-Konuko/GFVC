@@ -1,8 +1,13 @@
 # +
+'''
+This is a modification of the run.py script.
+It allows of batch inferencing while changing the yaml file used 
+'''
 import os
 import yaml
 from tqdm import tqdm
 from argparse import ArgumentParser
+from typing import List
 
 
 def read_config_file(config_path):
@@ -10,6 +15,12 @@ def read_config_file(config_path):
     with open(config_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
+
+
+class CodecConfig:
+    '''A wrapper class with all configurations for batch processing'''
+    def __init__(self, qp_list:List[int], seq_list:List[str]) -> None:
+        pass
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -50,8 +61,14 @@ if __name__ == "__main__":
         for seq in tqdm(seqlist):
             original_seq=Sequence_dir+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb'
             cmd = "./run.sh "+Model+" "+Mode+" "+original_seq+" "+str(frames)+" "+str(quantization_factor)+" "+str(qp)+" "+str(Iframe_format)
+            if Model in ['DAC','RDAC']:
+                cmd += " " + args['adaptive_metric'] + " " + str(args['adaptive_thresh'])
+
+            if Model == 'RDAC':
+                cmd += " " + str(args['residual_coding_params']['rate_idx']) + " "+ str(args['residual_coding_params']['int_value'])+ " "+ str(args['residual_coding_params']['gop_size'])
+
             os.system(cmd)  
-            print(Model+"_"+Mode+"_"+seq+"_"+qp+" Finished")
-            break 
-        break
+            print(Model+"_"+Mode+"_"+seq+"_"+str(qp)+" Finished")
+            # break 
+        # break
             

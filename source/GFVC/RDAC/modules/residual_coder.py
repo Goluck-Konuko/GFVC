@@ -198,18 +198,18 @@ class ResidualCoder(CompressionModel):
             # scale_h, mean_h = self.get_averages(scales_hat, means_hat, H,W)
             indexes = self.gaussian_conditional.build_indexes(scales_hat)
             y_strings = self.gaussian_conditional.compress(y, indexes, means=means_hat)
-            bts = (len(y_strings[0])+len(z_strings[0])) * 8
+            bits = (len(y_strings[0])+len(z_strings[0])) * 8
             enc_time = time.time() - enc_start
             dec_start = time.time()
-            res_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
+            res_hat, y_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
             dec_time = time.time() - dec_start
             #update bitstream info
             out = {'time':{'enc_time': enc_time,'dec_time': dec_time},
-                    'bitstring_size':bts}
-            out.update({'res_hat':res_hat,'prev_latent':y})
+                    'bits':bits, 'bitstring': {'strings':[y_strings, z_strings], 'shape':z.size()[-2:]}}
+            out.update({'res_hat':res_hat,'res_latent_hat':y_hat})
             return out, False
 
-    def rans_decompress(self, strings, shape, rate_idx=0, q_value=1.0):
+    def rans_decompress(self, strings, shape, rate_idx=0, q_value=1.0, **kwargs):
         assert isinstance(strings, list) and len(strings) == 2
         z_hat = self.entropy_bottleneck.decompress(strings[1], shape)
         if self.variable_bitrate:
@@ -226,7 +226,7 @@ class ResidualCoder(CompressionModel):
         x_hat = self.g_s(y_hat)
         if self.scale_factor != 1:
             x_hat = self.upsample(x_hat, 1//self.scale_factor)
-        return x_hat
+        return x_hat, y_hat
    
     def ae_compress(self, residual,  prev_latent, rate_idx=0,q_value=0.0,use_skip=False, skip_thresh=0.95, scale_factor=1.0,**kwargs):
         B,C,H,W = residual.shape

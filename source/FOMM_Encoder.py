@@ -72,7 +72,6 @@ if __name__ == "__main__":
         if frame_idx in [0]:      # I-frame      
             
             if Iframe_format=='YUV420':
-                
                 # wtite ref and cur (rgb444) to file (yuv420)
                 f_temp=open(dir_enc+'frame'+frame_idx_str+'_org.yuv','w')
                 img_input_rgb = cv2.merge([listR[frame_idx],listG[frame_idx],listB[frame_idx]])
@@ -80,7 +79,7 @@ if __name__ == "__main__":
                 img_input_yuv.tofile(f_temp)
                 f_temp.close()            
 
-                os.system("./vtm/encode.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
+                os.system("./image_codecs/vtm/encode.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
 
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8
@@ -100,7 +99,7 @@ if __name__ == "__main__":
                 img_input_rgb.tofile(f_temp)
                 f_temp.close()
 
-                os.system("./vtm/encode_rgb444.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
+                os.system("./image_codecs/vtm/encode_rgb444.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
                 
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8
@@ -194,6 +193,7 @@ if __name__ == "__main__":
             final_encoder_expgolomb(kp_difference,bin_file)     
 
             bits=os.path.getsize(bin_file)*8
+            kp_bits += bits
             sum_bits += bits          
 
             #### decoding for residual
@@ -223,7 +223,7 @@ if __name__ == "__main__":
             final_encoder_expgolomb(kp_difference,bin_file)     
 
             bits=os.path.getsize(bin_file)*8
-            sum_bits += bits          
+            sum_bits += bits       
 
             #### decoding for residual
             res_dec = final_decoder_expgolomb(bin_file)
@@ -233,8 +233,6 @@ if __name__ == "__main__":
             res_difference_dec=[i/Qstep for i in res_difference_dec]
             rec_semantics=(np.array(res_difference_dec)+np.array(rec_sem[frame-1])).tolist()
             rec_sem.append(rec_semantics)
-
-
 
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   

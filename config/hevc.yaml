@@ -1,4 +1,4 @@
-codec_name: 'VVC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choose which GFVC model to be used.
+codec_name: 'HEVC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choose which GFVC model to be used.
 
 #dataset params 
 sequence_dir: '../../dataset/'  ###You should download the testing sequence and modify the dir.
@@ -15,7 +15,7 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 #codec params   
 inference_mode: 'Encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: [ "22", "32", "42", "52"]
+qp_list: ["28", "32", "42","51"] #
 quantization_factor: 64 #Number of bins for KP coding
 
 #evaluation params

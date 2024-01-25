@@ -101,11 +101,3 @@ visualizer_params:
   draw_border: True
   colormap: "gist_rainbow"
 
-residual_coding_params: #Parameters for coding the frame residuals
-  rate_idx: 4 #The residual coding rd point
-  q_value: 0.0 #Used for interpolation between RD points
-  gop_size: 32 #Max number of frames to animate from a single reference
-  use_skip: False #Use a distance metric between latent represenations of residuals to skip unnecessary encodings
-  skip_thresh: 0.75 #The threshold value of the distance metric used in skipping residual coding
-  rq_step: 1024
-

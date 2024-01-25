@@ -31,11 +31,16 @@ class RD_Data:
     '''Handling'''
     def __init__(self, codec:str, **kwargs) -> None:
         self.codec = codec
+        self.rate_idx = kwargs['rate_idx']
         self.data_dir = f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/evaluation"
-        self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit"
+        if self.codec in ['rdac']:
+            self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit_RQP"
+        else:
+            self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit"
         self.qps = kwargs['qps']
         self.metrics = kwargs['metrics']
         self.dataset_name = kwargs['dataset_name']
+        
         self.data = self._load_data()
 
     def _load_data(self)->Dict[str,Dict[str,List[float]]]:
@@ -45,8 +50,15 @@ class RD_Data:
             # for m in self.metrics:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
-            seqs = sorted([x for x in seqs if f"QP{qp}" in x], key= lambda x: x.split('_')[1])
-            br_files = [x for x in os.listdir(self.bitrate_dir) if f"QP{qp}" in x]
+            if self.codec in ['rdac']:
+                filter = f"QP4_RQP{qp}"
+                bitrate_dir = self.bitrate_dir+f"{qp}"
+            else:
+                filter = f"QP{qp}"
+                bitrate_dir = self.bitrate_dir
+            print(bitrate_dir)
+            seqs = sorted([x for x in seqs if filter in x], key= lambda x: x.split('_')[1])
+            br_files = [x for x in os.listdir(bitrate_dir) if filter in x]
             #read the evaluation data for each metric for all the sequences and compute averages
             qp_metrics = {}
             for m in self.metrics:
@@ -62,7 +74,7 @@ class RD_Data:
                 qp_metrics[m] = np.mean(m_data, axis=0) #compute the mean for all the sequences per frame
 
             #get the average BR, Encoding and Decoding Time
-            bitrate, enc_time, dec_time = self._get_br_metrics(br_files)
+            bitrate, enc_time, dec_time = self._get_br_metrics(bitrate_dir,br_files)
             qp_metrics['bits'] = bitrate
             qp_metrics['enc_time'] = enc_time
             qp_metrics['dec_time'] = dec_time
@@ -75,10 +87,10 @@ class RD_Data:
             s_data = out.read().splitlines()
         return [float(x) for x in s_data]
     
-    def _get_br_metrics(self, br_files: List[str])->tuple:
+    def _get_br_metrics(self,bitrate_dir, br_files: List[str])->tuple:
         bits, enc_time, dec_time = 0 , 0 , 0
         for f in br_files:
-            path = f"{self.bitrate_dir}/{f}"
+            path = f"{bitrate_dir}/{f}"
             with open(path, 'r') as out:
                 br_info = out.read().splitlines()[0]
             b,e,d = br_info.split(" ")
@@ -105,12 +117,17 @@ class Plotter:
         output_path = f"{self.out_path}/PLOTS/TEMPORAL/{'_'.join(self.codecs)}"
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-        
+        codecs = list(codec_data.keys())
+        qp_list = list(codec_data[codecs[0]].data.keys())
         for metric in self.metrics:
             fig, ax = plt.subplots(1,1)
             for cd in self.codecs:
-                m_data = codec_data[cd].data[qp][metric]
+                m_data = codec_data[cd].data[qp_list[-1]][metric]
+                if metric in ['lpips', 'dists']:
+                    m_data = 1-np.array(m_data)
                 ax.plot(range(len(m_data)), m_data,marker='o',linewidth=2.5,markersize=5, label=cd.upper())
+            if metric in ['lpips', 'dists']:
+                metric = f"I-{metric.upper()}"
             ax.set_ylabel(metric.upper(), fontsize=25)
             ax.set_xlabel('Frames', fontsize=25)
             ax.legend(loc='best', fontsize=25)
@@ -127,16 +144,23 @@ class Plotter:
         if not os.path.exists(output_path):
             os.makedirs(output_path)
         
+        codecs = list(codec_data.keys())
+        qp_list = list(codec_data[codecs[0]].data.keys())
+
         for metric in self.metrics:
             fig, ax = plt.subplots(1,1)
-            for cd in self.codecs:
+            for cd in codecs:
                 br, m_data = [], []
-                for q in self.qps:
+                for q in qp_list:
                     m = codec_data[cd].data[q][metric]
                     bitrate = ((codec_data[cd].data[q]['bits']/len(m))*fps)/1000
                     br.append(bitrate)
                     m_data.append(np.mean(m))
+                if metric in ['lpips', 'dists']:
+                    m_data = 1-np.array(m_data)
                 ax.plot(br, m_data,marker='o',linewidth=3.5,markersize=15, label=cd.upper())
+            if metric in ['lpips', 'dists']:
+                metric = f"I-{metric.upper()}"
             ax.set_ylabel(metric.upper(), fontsize=25)
             ax.set_xlabel('Bitrate (kbps)', fontsize=25)
             ax.legend(loc='best', fontsize=25)
@@ -149,17 +173,25 @@ class Plotter:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="fv2v,fomm,cfte,dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--codecs", default="rdac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
     parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
     parser.add_argument("--qps", default="22,32,42,52", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
     parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
     parser.add_argument('--format', default="yuv420", type=str, help="Format for compressing the reference frame [yuv420 | rgb444]")
+    parser.add_argument('--rate_idx', default=1, type=int, help="RD index for RDAC residual coding")
+    
     args = parser.parse_args()
     
-    
+    #fv2v,fomm,cfte,dac,
     codec_data = {}
-    codec_params = {'qps': args.qps, 'metrics':args.metrics, 'iframe_format':args.format, 'dataset_name': args.dataset_name.upper()}
+
+    codec_params = {'metrics':args.metrics, 'iframe_format':args.format, 'dataset_name': args.dataset_name.upper(), 'rate_idx':args.rate_idx}
     for codec in args.codecs:
+        if codec in ['rdac']:
+            qp_list = [0,1,2]
+        else:
+            qp_list = args.qps
+        codec_params.update({'qps': qp_list})
         path = f"experiment/{codec.upper()}/evaluation"
         codec_data[codec] = RD_Data(codec, **codec_params)
 

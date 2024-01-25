@@ -14,12 +14,19 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 
 #codec params   
-inference_mode: 'Encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: [ "22", "32", "42", "52"]
-quantization_factor: 64 #Number of bins for KP coding
+inference_mode: 'Decoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+qp_list: [4] #[ "22", "32", "42", "52"] #[ "22", "32", "42", "52"]  #<- VTM #["6","5","4","3","2"] # <-LIC
+quantization_factor: 64 #64 #Number of bins for KP coding
 adaptive_metric: "PSNR" #The metric used to select and store reference frames [PSNR, MS_SSIM,FSIM, LPIPS, DISTS]
 adaptive_thresh: 20 #Threshold value (depends on the metric)
 
 #evaluation params
 metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim']
 
+# => RDAC
+residual_coding_params: #Parameters for coding the frame residuals
+  gop_size: 32 #Max number of frames to animate from a single reference
+  rate_idx: 3 #The residual coding rd point
+  int_value: 0.0 #Used for interpolation between RD points i.e. the RDAC model is trained 
+                  #with 1-6 discrete RD points but we can get intermediate RD points
+                  #such as 2.3 at inference time through rate_idx=2, int_value=0.3

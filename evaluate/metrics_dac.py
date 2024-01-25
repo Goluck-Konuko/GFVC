@@ -15,8 +15,8 @@ if __name__ == "__main__":
     args = read_config_file(opt.config)
     
     seqlist= args['seq_list']
-
-    qplist= args['qp_list'] 
+    
+    
 
     width=args['width']
     height=args['height']
@@ -28,10 +28,12 @@ if __name__ == "__main__":
     Model=args['codec_name']  ## 'FV2V' OR 'FOMM' OR 'CFTE'
     Iframe_format=args['iframe_format']   ## 'YUV420'  OR 'RGB444'
     
-    if Model in ['HEVC', 'VVC']:
-        result_dir = './experiment/'+Model+'/'+Iframe_format+'/evaluation/'
+    if Model in ['RDAC']:
+        qplist = [0,1,2,3]
     else:
-        result_dir = './experiment/'+Model+'/Iframe_'+Iframe_format+'/evaluation/'
+        qplist= args['qp_list'] 
+    
+    result_dir = './experiment/'+Model+'/Iframe_'+Iframe_format+'/evaluation/'
 
     
     device = 'cpu'
@@ -46,7 +48,8 @@ if __name__ == "__main__":
     seqIdx=0
     for seq in tqdm(seqlist):
         qpIdx=0
-        for qp in tqdm(qplist):
+        qp = 4
+        for rate_idx in tqdm(qplist):
             start=time.time()    
             if not os.path.exists(result_dir):
                 os.makedirs(result_dir) 
@@ -55,23 +58,23 @@ if __name__ == "__main__":
             f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
 
             if Model == 'RDAC':
-                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'_RQP'+str(args['residual_coding_params']['rate_idx'])+'.rgb','rb')
+                f_test=open('./experiment/'+Model+'/Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'_RQP'+str(rate_idx)+'.rgb','rb')
             else:
-                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')       
+                f_test=open('./experiment/'+Model+'/Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(rate_idx)+'.rgb','rb')       
             
             #open files to store the computed metrics
             output_files = {}
             accumulated_metrics = {}
             for m in monitor.metrics:
                 if Model in ['RDAC']:
-                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'_RQP'+str(args['residual_coding_params']['rate_idx'])+f'_{m}.txt'
+                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'_RQP'+str(rate_idx)+f'_{m}.txt'
                 else:
-                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+f'_{m}.txt'
+                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(rate_idx)+f'_{m}.txt'
                 output_files.update({m:open(mt_out_path,'w')})
                 accumulated_metrics.update({m:0})
 
 
-            for frame in tqdm(range(0,frames)):                 
+            for frame in range(0,frames):                 
                 img_org = np.fromfile(f_org,np.uint8,3*height*width).reshape((3,height,width))
                 img_test = np.fromfile(f_test,np.uint8,3*height*width).reshape((3,height,width))
                 #compute the metrics
@@ -91,7 +94,7 @@ if __name__ == "__main__":
             f_test.close()
 
             end=time.time()
-            print(testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'.rgb',"success. Time is %.4f"%(end-start))
+            print(testingdata_name+'_'+str(seq)+'_QP'+str(rate_idx)+'.rgb',"success. Time is %.4f"%(end-start))
             qpIdx+=1
         seqIdx+=1
 

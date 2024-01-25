@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from GFVC.utils import *
 from GFVC.RDAC_utils import *
+from image_codecs.lic import LICDec
 from argparse import ArgumentParser
 from skimage.transform import resize
 from GFVC.RDAC.animate import normalize_kp
@@ -15,16 +16,22 @@ from GFVC.RDAC.entropy_coders.residual_entropy_coder import ResEntropyDecoder
 
 
 class ReferenceImageDecoder:
-    def __init__(self, dir_enc:str, qp:int=22, height: int=256, width: int=256, format='YUV420') -> None:
+    def __init__(self, dir_enc:str, qp:int=22, height: int=256, width: int=256, format='YUV420', enc_name='vtm', device='cpu', model_name='cheng2020attn') -> None:
+        self.enc_name = enc_name
+        self.device = device
         self.dir_enc = dir_enc
         self.qp = qp
         self.height= height
         self.width = width
         self.format = format
+        if self.enc_name == 'lic':
+            self.lic_decoder = LICDec(self.dir_enc,model_name=model_name, quality=self.qp, device=self.device)
+        else:
+            self.lic_decoder = None
 
-    def decompress_reference_yuv(self, frame_idx:int):
+    def vtm_decompress_reference_yuv(self, frame_idx:int):
         frame_idx_str = str(frame_idx)
-        os.system("./vtm/decode.sh "+self.dir_enc+'frame'+frame_idx_str)
+        os.system("./image_codecs/vtm/decode.sh "+self.dir_enc+'frame'+frame_idx_str)
         bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
         bits=os.path.getsize(bin_file)*8
 
@@ -36,9 +43,9 @@ class ReferenceImageDecoder:
         img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1
         return img_rec , bits          
                     
-    def decompress_reference_rgb(self, frame_idx: int)->np.ndarray:
+    def vtm_decompress_reference_rgb(self, frame_idx: int)->np.ndarray:
         frame_idx_str = str(frame_idx)
-        os.system("./vtm/decode_rgb444.sh "+self.dir_enc+'frame'+frame_idx_str)
+        os.system("./image_codecs/vtm/decode_rgb444.sh "+self.dir_enc+'frame'+frame_idx_str)
         bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
         bits=os.path.getsize(bin_file)*8
 
@@ -49,10 +56,15 @@ class ReferenceImageDecoder:
         return img_rec, bits   
 
     def decompress_reference(self,frame_idx:int)->np.ndarray:
-        if self.format == 'YUV420':
-            img_rec, bits = self.decompress_reference_yuv(frame_idx)
-        else:
-            img_rec, bits = self.decompress_reference_rgb(frame_idx)
+        if self.enc_name == 'vtm':
+            if self.format == 'YUV420':
+                img_rec, bits = self.vtm_decompress_reference_yuv(frame_idx)
+            else:
+                img_rec, bits = self.vtm_decompress_reference_rgb(frame_idx)
+        elif self.enc_name == 'lic':
+            dec_info = self.lic_decoder.decompress(frame_idx)
+            img_rec = dec_info['x_hat']
+            bits = dec_info['bits']
         return img_rec, bits
 
 class KPDecoder:
@@ -93,8 +105,12 @@ class KPDecoder:
         self.reference_frame_idx = [int(i) for i in metadata]
         return os.path.getsize(bin_file)*8
 
-def to_tensor(frame: np.ndarray)->torch.Tensor:
+def frame2tensor(frame: np.ndarray)->torch.Tensor:
     return torch.tensor(frame[np.newaxis].astype(np.float32))
+
+def tensor2frame(frame:torch.Tensor)->np.ndarray:
+    pred = frame.detach().cpu().numpy()[0]
+    return (pred*255).astype(np.uint8) 
 
 class AdaptiveDecoder:
     def __init__(self, generator, output_dir:str, res_inp_path:str,res_coding_params:Dict[str,Any],adaptive_metric:str='psnr', device:str='cpu'):
@@ -126,15 +142,21 @@ class AdaptiveDecoder:
         #Generate Animation
         anim_frame = self.generate_animation(reference, kp_target, kp_reference)
         #Decode residual and reconstruct
-        if self.res_decoder.metadata[frame_idx-1] == 1:
-            res_latent_info = self.res_decoder.decode_res(frame_idx)
-            res_latent_hat = torch.tensor(res_latent_info['res_latent_hat'], dtype=torch.float32).reshape((1,72,8,8)).to(self.device)
-            res_hat = self.generator.sdc.ae_decompress(res_latent_hat,rate_idx=self.residual_coding_params['rate_idx'], q_value=self.residual_coding_params['q_value'])
+        res_bits = 0
+        if self.res_decoder.metadata[frame_idx] == 1:
+            #read the encoded frame residual latent and decode it
+            bitstring, res_bits = read_bitstring(self.res_inp_path, frame_idx)
+            res_hat, _ = self.generator.sdc.rans_decompress(bitstring['strings'], bitstring['shape'], 
+                                                                         rate_idx=self.residual_coding_params['rate_idx'],
+                                                                         q_value=self.residual_coding_params['q_value'])
+            # res_latent_info = self.res_decoder.decode_res(frame_idx)
+            # res_latent_hat = torch.tensor(res_latent_info['res_latent_hat'], dtype=torch.float32).reshape((1,72,8,8)).to(self.device)
+            # res_hat = self.generator.sdc.ae_decompress(res_latent_hat,rate_idx=self.residual_coding_params['rate_idx'], q_value=self.residual_coding_params['q_value'])
             prediction = anim_frame + res_hat
             self.prev_res_hat = res_hat
         else:
-            prediction = anim_frame + res_hat
-        return prediction, res_latent_info['bits']
+            prediction = anim_frame + self.prev_res_hat
+        return prediction, res_bits
 
 def read_config_file(config_path):
     '''Simply reads a yaml configuration file'''
@@ -153,6 +175,9 @@ if __name__ == "__main__":
     parser.add_argument("--Iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=20, type=float,help="Reference selection threshold")
+    parser.add_argument("--rate_idx", default=0, type=int,help="The RD point for coding the frame residuals [1-5]")
+    parser.add_argument("--int_value", default=0.0, type=float,help="Interpolation value between RD points for residual coding [0.0 - 1.0]")
+    parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
     opt = parser.parse_args()
@@ -164,6 +189,10 @@ if __name__ == "__main__":
     Qstep=opt.quantization_factor
     QP=opt.Iframe_QP
     Iframe_format=opt.Iframe_format
+    # residual coding params
+    rate_idx = opt.rate_idx
+    int_value = opt.int_value
+    #####
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
     device = opt.device
     if device =='cuda' and torch.cuda.is_available():
@@ -181,7 +210,6 @@ if __name__ == "__main__":
     
     ## Load config parameters
     config_params = read_config_file(RDAC_config_path)
-    rate_idx = config_params['residual_coding_params']['rate_idx']
     ###################################################
 
     kp_output_dir =model_dirname+'/kp/'+seq+'_QP'+str(QP)+'_RQP' +str(rate_idx)+'/'
@@ -208,25 +236,34 @@ if __name__ == "__main__":
     gene_time = 0
     sum_bits = 0
 
-    image_decoder = ReferenceImageDecoder(dir_enc, qp=QP, height=height,width=width, format=Iframe_format)
+    image_decoder = ReferenceImageDecoder(dir_enc, qp=int(QP), height=height,width=width, format=Iframe_format,enc_name='lic',device='cpu')
+    
     kp_decoder = KPDecoder(kp_output_dir,q_step=Qstep, device=device)
     sum_bits += kp_decoder.load_metadata()
     
     rdac_decoder = AdaptiveDecoder(generator=RDAC_Synthesis_Model,
                                    output_dir=dir_dec, res_inp_path=res_input_dir,
-                                   res_coding_params=config_params['residual_coding_params'], 
+                                   res_coding_params={'rate_idx':rate_idx,'q_value':int_value}, 
                                    device=device)
     
     #load residual decoder metadata i.e. skip flags
     sum_bits += rdac_decoder.res_decoder.load_metadata()
-
     for frame_idx in tqdm(range(0, frames)):            
         frame_idx_str = str(frame_idx).zfill(4)   
-        if frame_idx in kp_decoder.reference_frame_idx:      # I-frame                      
+        if frame_idx in kp_decoder.reference_frame_idx:      # I-frame                    
             img_rec, ref_bits = image_decoder.decompress_reference(frame_idx) 
-            sum_bits += ref_bits                                    
+            sum_bits += ref_bits 
+            if isinstance(img_rec, torch.Tensor):
+                out_ref = tensor2frame(img_rec)
+                out_ref.tofile(f_dec)
+            else:
+                img_rec.tofile(f_dec)
+
             with torch.no_grad(): 
-                reference = to_tensor(img_rec).to(device)
+                if isinstance(img_rec, torch.Tensor):
+                    reference = img_rec.to(device)
+                else:
+                    reference = frame2tensor(img_rec).to(device)
                 kp_reference = RDAC_Analysis_Model(reference) 
 
                 ####
@@ -250,9 +287,8 @@ if __name__ == "__main__":
                 sum_bits += res_bits
                 gene_end = time.time()
                 gene_time += gene_end - gene_start
-                pred = np.transpose(prediction.cpu().numpy(),[0,2,3,1])[0]
-                pre=(pred*255).astype(np.uint8)  
-                pre.tofile(f_dec)                              
+                pred = tensor2frame(prediction)
+                pred.tofile(f_dec)                              
 
                 frame_index=str(frame_idx).zfill(4)
                 bin_save=kp_output_dir+'/frame'+frame_index+'.bin'
@@ -269,6 +305,6 @@ if __name__ == "__main__":
     totalResult[0][1]=end-start   
     totalResult[0][2]=gene_time   
     
-    np.savetxt(dir_bit+seq+'_QP'+str(QP)+'.txt', totalResult, fmt = '%.5f')            
+    np.savetxt(dir_bit+seq+'_QP'+str(QP)+'_RQP' +str(rate_idx)+'.txt', totalResult, fmt = '%.5f')            
 
 

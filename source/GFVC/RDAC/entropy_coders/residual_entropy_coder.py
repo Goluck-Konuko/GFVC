@@ -43,25 +43,9 @@ class BasicEntropyCoder:
     def dequantize(self, tgt):
         return tgt
     
-    def mid_rise_quantizer(self, arr,levels=256):
-        arr = np.array(arr)
-        # print(arr)
-        max_val, min_val = np.max(arr), np.min(arr)
-        range_val = max_val - min_val
-        print(range_val)
-        step_size = range_val / levels
-        quantized_arr = np.round(np.floor((arr - min_val) / step_size) * step_size + min_val).astype(np.int16)
-        return quantized_arr
     
-    def mid_rise_dequantizer(self, quantized_arr, levels=256):
-        max_val, min_val = np.max(quantized_arr), np.min(quantized_arr)
-        range_val = max_val - min_val
-        step_size = range_val / levels
-        dequantized_arr = (quantized_arr / step_size) * step_size + min_val
-        return dequantized_arr
-     
 import time
-class ResEntropyCoder(BasicEntropyCoder):
+class ResEntropyCoder:
     '''Using PPM context model and an arithmetic codec with persistent frequency tables'''
     def __init__(self, model_order=0, eof=256,q_step=128, out_path:str=None) -> None:
         super().__init__()
@@ -80,6 +64,49 @@ class ResEntropyCoder(BasicEntropyCoder):
         self.q_step = q_step
         self.metadata = []
 
+    def mid_rise_quantizer(self, arr,levels=256):
+        arr = np.array(arr)
+        min_val, max_val = np.min(arr), np.max(arr)
+        range_val = max_val - min_val
+        step_size = max(1, range_val / levels)
+        quantized_arr = np.round(np.floor((arr - min_val) / step_size) * step_size + min_val).astype(np.int16)
+        return quantized_arr
+    
+    def mid_rise_dequantizer(self, quantized_arr, levels=256):
+        quantized_arr = np.array(quantized_arr)
+        min_val, max_val = np.min(quantized_arr), np.max(quantized_arr)
+        range_val = max_val - min_val
+        step_size = max(1, range_val / levels)
+        dequantized_arr = (quantized_arr / step_size) * step_size + min_val
+        return dequantized_arr
+     
+    def encode_res_2(self,res_latent: torch.tensor,frame_idx:int, levels=128):
+        frame_idx = str(frame_idx).zfill(4)
+        bin_file_path=self.res_output_dir+'/frame_res'+frame_idx+'.bin'
+        
+        shape = res_latent.shape
+        r_flat = res_latent.cpu().flatten().numpy().astype(np.int16)
+        r_flat = self.mid_rise_quantizer(r_flat,levels)
+        # #create a compressed bitstring
+        if self.previous_res is not None:
+            r_delta = r_flat - self.previous_res
+        else:
+            r_delta = r_flat
+        info_out  = self.compress_residual(r_delta, bin_file_path)
+        #     r_hat = info_out['res']+self.previous_res
+        # else:
+        #     info_out  = self.compress(r_flat)
+        #     r_hat = info_out['res']
+        # self.previous_res = r_hat
+        r_hat =  self.mid_rise_dequantizer(info_out['res_latent_hat'],levels)
+        if self.previous_res is not None:
+            res_hat = r_hat + self.previous_res
+        else:
+            res_hat = r_hat
+        res_hat = np.reshape(res_hat, shape)
+        info_out['res_latent_hat'] = res_hat
+        return info_out
+    
     def encode_res(self,res_latent, frame_idx:int=0):
         res_latent = self.convert_to_list(res_latent, frame_idx)
         #convert them to non-negative exp-golomb codes
@@ -110,7 +137,6 @@ class ResEntropyCoder(BasicEntropyCoder):
         #compact the bitstring
         with open(tmp_path, "wb") as raw:
             raw.write(raw_bitstring)
-
         # Set up encoder and model. In this PPM model, symbol 256 represents EOF;
         # its frequency is 1 in the order -1 context but its frequency
         # is 0 in all other contexts (which have non-negative order).
@@ -171,16 +197,16 @@ class ResEntropyCoder(BasicEntropyCoder):
         with open(dec_path, 'rb') as dec_out:
             decoded_bytes = dec_out.read()
         
-        kp_res = list(np.frombuffer(decoded_bytes, dtype=np.int8))
+        kp_res = list(np.frombuffer(decoded_bytes, dtype=np.int16))
         ######
         #Temporary patch for buffer error here.. NEED TO FIX LATER
-        out = []
-        for idx in range(0, len(kp_res), 8):
-            out.append(kp_res[idx])
+        # out = []
+        # for idx in range(0, len(kp_res), 4):
+        #     out.append(kp_res[idx])
         ######
         os.close(dec_p)
         os.remove(dec_path)
-        return out
+        return kp_res #out
 
     def encode_symbol(self, model, history, symbol, enc):
         # Try to use highest order context that exists based on the history suffix, such
@@ -230,12 +256,19 @@ class ResEntropyCoder(BasicEntropyCoder):
             f.write("".join(str(res_frame_list).split()))  
         return res_frame_list
 
-
     def encode_metadata(self)->None:
         bin_file=self.res_output_dir+'/metadata.bin'
         final_encoder_expgolomb(self.metadata,bin_file)     
         bits=os.path.getsize(bin_file)*8
         return bits
+    
+    def load_metadata(self)->None:
+        bin_file=self.res_output_dir+'metadata.bin'
+        dec_metadata = final_decoder_expgolomb(bin_file)
+        metadata = data_convert_inverse_expgolomb(dec_metadata)   
+        self.metadata = [int(i) for i in metadata]
+        return os.path.getsize(bin_file)*8
+
 
 
 class ResEntropyDecoder(BasicEntropyCoder):
@@ -256,15 +289,23 @@ class ResEntropyDecoder(BasicEntropyCoder):
         self.q_step = q_step
 
         self.metadata = None #This is just a checklist of whether the residual at this frame idx is encoded or skipped
+    
+    def mid_rise_dequantizer(self, quantized_arr, levels=256):
+        quantized_arr = np.array(quantized_arr)
+        min_val, max_val = np.min(quantized_arr), np.max(quantized_arr)
+        range_val = max_val - min_val
+        step_size = max(1, range_val / levels)
+        dequantized_arr = (quantized_arr / step_size) * step_size + min_val
+        return dequantized_arr
 
-    def decode_res(self,frame_idx:int=0):
+    def decode_res(self,frame_idx:int=0, levels=128):
         #convert them to non-negative exp-golomb codes
         frame_idx = str(frame_idx).zfill(4)
         bin_file_path=self.res_output_dir+'/frame_res'+str(frame_idx)+'.bin'
 
         info_out  = self.decompress_residual(bin_file_path)
-        r_delta_hat = reverse_dataconvert_expgolomb(info_out['res_latent_hat'])
-
+        # r_delta_hat = reverse_dataconvert_expgolomb(info_out['res_latent_hat'])
+        r_delta_hat = self.mid_rise_dequantizer(info_out['res_latent_hat'],levels)
         if self.previous_res is not None:
             r_hat = np.array(r_delta_hat) + np.array(self.previous_res)
         else:
@@ -297,17 +338,17 @@ class ResEntropyDecoder(BasicEntropyCoder):
         with open(dec_path, 'rb') as dec_out:
             decoded_bytes = dec_out.read()
         
-        kp_res = list(np.frombuffer(decoded_bytes, dtype=np.int8))
+        kp_res = list(np.frombuffer(decoded_bytes, dtype=np.int16))
         ######
         #Temporary patch for buffer error here.. NEED TO FIX LATER
-        out = []
-        for idx in range(0, len(kp_res), 8):
-            out.append(kp_res[idx])
+        # out = []
+        # for idx in range(0, len(kp_res), 8):
+        #     out.append(kp_res[idx])
         ######
         os.close(dec_p)
         os.remove(dec_path)
         dec_time = time.time()-dec_start
-        return {'res_latent_hat':out, 'dec_time':dec_time, 'bits': bits}
+        return {'res_latent_hat':kp_res, 'dec_time':dec_time, 'bits': bits}
 
     def decode_symbol(self, dec, model, history):
         # Try to use highest order context that exists based on the history suffix. When symbol 256
