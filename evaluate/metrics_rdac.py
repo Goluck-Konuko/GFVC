@@ -10,7 +10,7 @@ from eval_utils.metrics import MultiMetric
      
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-c","--config", default="config/fomm.yaml", type=str, help="Path to codec configuration file")
+    parser.add_argument("-c","--config", default="config/rdac.yaml", type=str, help="Path to codec configuration file")
     opt = parser.parse_args()
     args = read_config_file(opt.config)
     

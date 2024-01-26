@@ -5,11 +5,15 @@ logs_slurm/*
 
 *.slurm
 
+
 source/GFVC/*/checkpoint/*.pth.tar
 
-
+config/rdac+*
 source/RDAC+*
 source/GFVC/RDAC+
 
-source/CDAC+*
-source/GFVC/CDAC+
+*cdac*
+source/CDAC*
+source/GFVC/CDAC
+
+results/

@@ -24,7 +24,7 @@ def calc_files_size(files_path):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-c","--config", default="../../config/hevc.yaml", type=str, help="Path to codec configuration file")
+    parser.add_argument("-c","--config", default="config/hevc.yaml", type=str, help="Path to codec configuration file")
     opt = parser.parse_args()
     args = read_config_file(opt.config)
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     input_format=args['iframe_format']     
         
-    input_bin_file_path='./experiment/'+codec_name.upper()+'/EncodeResult/'
+    input_bin_file_path='./experiment/'+codec_name.upper()+'/'+input_format+'/enc/'
     save_path='./experiment/'+codec_name.upper()+'/'
 
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         for qpIdx, qp in enumerate(qplist):  
     
                 
-            path = input_bin_file_path+test_dataset+'_'+str(seq)+'_qp'+str(qp)+'.bin'
+            path = input_bin_file_path+test_dataset+'_'+str(seq)+f'_{width}x{height}_25_8bit_420_QP'+str(qp)+'.bin'
             overall_bits=os.path.getsize(path)*8 
             print(overall_bits)
 

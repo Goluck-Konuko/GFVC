@@ -164,52 +164,39 @@ class ResidualCoder(CompressionModel):
         output = cos(prev, cur)
         return output
 
-    def rans_compress(self, residual,  prev_latent, rate_idx=0,q_value=1.0,use_skip=False, skip_thresh=0.95, scale_factor=1.0):
+    def rans_compress(self, residual, rate_idx=0, q_value=0.0,**kwargs):
         enc_start = time.time()
-        # self.scale_factor = scale_factor
-        B,C,H,W = residual.shape
-        if self.scale_factor != 1:
-            residual = self.downsample(residual,self.scale_factor)
-
         y = self.g_a(residual)
-        if prev_latent != None and use_skip:
-            sim = torch.mean(self.similarity(prev_latent, y)).item()
-        else:
-            sim = 0
-        if sim > skip_thresh:
-            #skip this residual
-            return None, True
-        else:
-            if self.variable_bitrate:
-                y = self.compute_interpolated_gain(y, rate_idx, q_value)
+        if self.variable_bitrate:
+            y = self.compute_interpolated_gain(y, rate_idx, q_value)
+    
+        z = self.h_a(y)
+        if self.variable_bitrate:
+            z = self.compute_interpolated_gain(z, rate_idx, q_value, hyper=True)
         
-            z = self.h_a(y)
-            if self.variable_bitrate:
-                z = self.compute_interpolated_gain(z, rate_idx, q_value, hyper=True)
-            
-            z_strings = self.entropy_bottleneck.compress(z)
-            z_hat = self.entropy_bottleneck.decompress(z_strings, z.size()[-2:])
-            if self.variable_bitrate:
-                z_hat = self.compute_inverse_interpolated_gain(z_hat, rate_idx, q_value, hyper=True)
+        z_strings = self.entropy_bottleneck.compress(z)
+        z_hat = self.entropy_bottleneck.decompress(z_strings, z.size()[-2:])
+        if self.variable_bitrate:
+            z_hat = self.compute_inverse_interpolated_gain(z_hat, rate_idx, q_value, hyper=True)
 
-            gaussian_params = self.h_s(z_hat)
-            scales_hat, means_hat = gaussian_params.chunk(2, 1)
-            
-            # scale_h, mean_h = self.get_averages(scales_hat, means_hat, H,W)
-            indexes = self.gaussian_conditional.build_indexes(scales_hat)
-            y_strings = self.gaussian_conditional.compress(y, indexes, means=means_hat)
-            bits = (len(y_strings[0])+len(z_strings[0])) * 8
-            enc_time = time.time() - enc_start
-            dec_start = time.time()
-            res_hat, y_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
-            dec_time = time.time() - dec_start
-            #update bitstream info
-            out = {'time':{'enc_time': enc_time,'dec_time': dec_time},
-                    'bits':bits, 'bitstring': {'strings':[y_strings, z_strings], 'shape':z.size()[-2:]}}
-            out.update({'res_hat':res_hat,'res_latent_hat':y_hat})
-            return out, False
+        gaussian_params = self.h_s(z_hat)
+        scales_hat, means_hat = gaussian_params.chunk(2, 1)
+        
+        # scale_h, mean_h = self.get_averages(scales_hat, means_hat, H,W)
+        indexes = self.gaussian_conditional.build_indexes(scales_hat)
+        y_strings = self.gaussian_conditional.compress(y, indexes, means=means_hat)
+        bits = (len(y_strings[0])+len(z_strings[0])) * 8
+        enc_time = time.time() - enc_start
+        dec_start = time.time()
+        res_hat, y_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
+        dec_time = time.time() - dec_start
+        #update bitstream info
+        out = {'time':{'enc_time': enc_time,'dec_time': dec_time},
+                'bits':bits, 'bitstring': {'strings':[y_strings, z_strings], 'shape':z.size()[-2:]}}
+        out.update({'res_hat':res_hat,'res_latent_hat':y_hat})
+        return out
 
-    def rans_decompress(self, strings, shape, rate_idx=0, q_value=1.0, **kwargs):
+    def rans_decompress(self, strings, shape, rate_idx=0, q_value=0.0, **kwargs):
         assert isinstance(strings, list) and len(strings) == 2
         z_hat = self.entropy_bottleneck.decompress(strings[1], shape)
         if self.variable_bitrate:
@@ -224,34 +211,22 @@ class ResidualCoder(CompressionModel):
             y_hat = self.compute_inverse_interpolated_gain(y_hat, rate_idx, q_value)
 
         x_hat = self.g_s(y_hat)
-        if self.scale_factor != 1:
-            x_hat = self.upsample(x_hat, 1//self.scale_factor)
         return x_hat, y_hat
    
-    def ae_compress(self, residual,  prev_latent, rate_idx=0,q_value=0.0,use_skip=False, skip_thresh=0.95, scale_factor=1.0,**kwargs):
-        B,C,H,W = residual.shape
-        if self.scale_factor != 1:
-            residual = self.downsample(residual,self.scale_factor)
-
+    def ae_compress(self, residual, rate_idx=0,q_value=0.0,**kwargs):
+        '''Returns the raw latent represenation of the frame residual multiplied by 
+        the learned gain vector for a target bitrate. Useful for when you want to use an 
+        an external entropy coder or visualize the distribution of the latent'''
         y = self.g_a(residual)
-        if prev_latent != None and use_skip:
-            sim = torch.mean(self.similarity(prev_latent, y)).item()
-        else:
-            sim = 0
-        if sim > skip_thresh:
-            #skip this residual
-            return None, True
-        else:
-            if self.variable_bitrate:
-                y = torch.round(self.compute_interpolated_gain(y, rate_idx, q_value))
-            return y, False
+        if self.variable_bitrate:
+            y = torch.round(self.compute_interpolated_gain(y, rate_idx, q_value))
+        return y
         
-    def ae_decompress(self, y_hat, rate_idx=0, q_value=0.0, **kwargs):       
+    def ae_decompress(self, y_hat, rate_idx=0, q_value=0.0, **kwargs): 
+        '''Takes a reconstructed latent representation from an external entropy coder
+          and returns the decoded frame residual'''      
         if self.variable_bitrate:
             y_hat = self.compute_inverse_interpolated_gain(y_hat, rate_idx, q_value)
-
         x_hat = self.g_s(y_hat)
-        if self.scale_factor != 1:
-            x_hat = self.upsample(x_hat, 1//self.scale_factor)
         return x_hat
    

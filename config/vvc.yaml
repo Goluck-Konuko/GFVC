@@ -14,8 +14,8 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 
 #codec params   
-inference_mode: 'Encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: [ "22", "32", "42", "52"]
+inference_mode: 'Decoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+qp_list: ["28"]  #[ "22", "32", "42", "52"]
 quantization_factor: 64 #Number of bins for KP coding
 
 #evaluation params
