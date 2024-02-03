@@ -193,7 +193,6 @@ if __name__ == "__main__":
             final_encoder_expgolomb(kp_difference,bin_file)     
 
             bits=os.path.getsize(bin_file)*8
-            kp_bits += bits
             sum_bits += bits          
 
             #### decoding for residual

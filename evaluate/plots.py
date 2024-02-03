@@ -38,7 +38,7 @@ class Plotter:
         '''Plots the evaluation metrics per frame'''
         plt.rcParams['figure.figsize'] = [14, 9] 
         plt.rcParams.update({'font.size': 25})
-        output_path = f"{self.out_path}/PLOTS/TEMPORAL/{'_'.join(self.codecs)}"
+        output_path = f"{self.out_path}/TEMPORAL/{'_'.join(self.codecs)}"
         if not os.path.exists(output_path):
             os.makedirs(output_path)
         codecs = list(codec_data.keys())
@@ -65,7 +65,7 @@ class Plotter:
         '''Plots the RD evaluation curves'''
         plt.rcParams['figure.figsize'] = [14, 9] 
         plt.rcParams.update({'font.size': 25})
-        output_path = f"{self.out_path}/PLOTS/RD/{'_'.join(self.codecs)}"
+        output_path = f"{self.out_path}/RD/{'_'.join(self.codecs)}"
         if not os.path.exists(output_path):
             os.makedirs(output_path)
         
@@ -90,7 +90,7 @@ class Plotter:
                         m_data.append(np.mean(m))
                 if metric in ['lpips', 'dists']:
                     m_data = 1-np.array(m_data)
-                ax.plot(br, m_data,marker='o',linewidth=3.5,markersize=15, label=codec.upper())
+                ax.plot(br[-len(m_data):], m_data,marker='o',linewidth=3.5,markersize=15, label=codec.upper())
             if metric in ['lpips', 'dists']:
                 metric = f"I-{metric}"
             ax.set_ylabel(metric.upper(), fontsize=25)
@@ -101,13 +101,13 @@ class Plotter:
             plt.savefig(f"{output_path}/{metric}.png", bbox_inches='tight')
             plt.close()
         
-# 
+# fomm,cfte,dac,hevc,vvc
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="fv2v,fomm,cfte,dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--codecs", default="fomm,cfte,dac,hevc,vvc", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
     parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
-    parser.add_argument("--qps", default="28,32,42,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
+    parser.add_argument("--qps", default="32,35,38,42,45,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
     parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
     parser.add_argument('--format', default="yuv420", type=str, help="Format for compressing the reference frame [yuv420 | rgb444]")
     parser.add_argument('--rate_idx', default=1, type=int, help="RD index for RDAC residual coding")
@@ -119,8 +119,10 @@ if __name__ == "__main__":
     for codec in args.codecs:
         if codec in ['fv2v','cfte','fomm','dac']:
             #Reference frame QP values
-            qp_list = ["22","32","42","52"]
-        elif codec in ['rdac','rdac+']:
+            qp_list = ['22',"32","42"]
+        elif codec in ['hevc']:
+            qp_list = ["35","38","42","45","51"]
+        elif codec in ['rdac','rdacp']:
             # RD index for residual coding
             qp_list = [0,1,2,3]
         else:
@@ -130,14 +132,14 @@ if __name__ == "__main__":
         path = f"experiment/{codec.upper()}/evaluation"
         if codec in ['hevc', 'vvc']:
             data_handler = AnchorDataHandler
-        elif codec in ['rdac','rdac+']:
+        elif codec in ['rdac','rdacp']:
             data_handler = RDACDataHandler
         else:
             data_handler = GFVCDataHandler
         codec_data[codec] = data_handler(codec, **codec_params)
 
     ## Generate Plots
-    output_path = "experiment"
+    output_path = f"experiment/plots/{args.dataset_name.upper()}"
     plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
     plotter.plot_temporal_comparison(codec_data)
     plotter.plot_rd_comparison(codec_data)

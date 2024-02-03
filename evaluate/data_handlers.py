@@ -74,7 +74,7 @@ class RDACDataHandler(GFVCDataHandler):
         self.codec = codec
         self.rate_idx = kwargs['rate_idx']
         self.data_dir = f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/evaluation"
-        if self.codec in ['rdac']:
+        if self.codec in ['rdac','rdacp']:
             self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit_RQP"
         else:
             self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit"
@@ -91,7 +91,7 @@ class RDACDataHandler(GFVCDataHandler):
             # for m in self.metrics:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
-            if self.codec in ['rdac']:
+            if self.codec in ['rdac','rdacp']:
                 filter = f"QP4_RQP{qp}"
                 bitrate_dir = self.bitrate_dir+f"{qp}"
             else:

@@ -52,6 +52,6 @@ if __name__ == "__main__":
             cmd = "./run.sh "+Model+" "+Mode+" "+original_seq+" "+str(frames)+" "+str(quantization_factor)+" "+str(qp)+" "+str(Iframe_format)
             os.system(cmd)  
             print(Model+"_"+Mode+"_"+seq+"_"+qp+" Finished")
-            break 
-        break
+            # break 
+        # break
             

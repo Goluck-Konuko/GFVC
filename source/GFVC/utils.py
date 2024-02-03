@@ -83,3 +83,36 @@ def yuv420_to_rgb444(yuvfilename, W, H, startframe, totalframe, show=False, out=
                 cv2.imwrite(outname,oneframe_RGB[:,:,::-1])
             arr[i] = oneframe_RGB
     return arr
+
+import torch
+def to_tensor(frame: np.ndarray)->torch.Tensor:
+    return torch.tensor(frame[np.newaxis].astype(np.float32))
+
+def read_config_file(config_path):
+    '''Simply reads a yaml configuration file'''
+    with open(config_path) as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    return config
+
+
+class AverageMeter:
+    """Compute running average."""
+
+    def __init__(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+def frame2tensor(frame: np.ndarray)->torch.Tensor:
+    return torch.tensor(frame[np.newaxis].astype(np.float32))
+
+def tensor2frame(frame:torch.Tensor)->np.ndarray:
+    pred = frame.detach().cpu().numpy()[0]
+    return (pred*255).astype(np.uint8) 

@@ -28,8 +28,8 @@ if __name__ == "__main__":
     Model=args['codec_name']  ## 'FV2V' OR 'FOMM' OR 'CFTE'
     Iframe_format=args['iframe_format']   ## 'YUV420'  OR 'RGB444'
     
-    if Model in ['RDAC']:
-        qplist = [0,1,2,3]
+    if Model in ['RDAC','RDACP']:
+        qplist = [4]
     else:
         qplist= args['qp_list'] 
     
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             ### You should modify the path of original sequence and reconstructed sequence
             f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
 
-            if Model == 'RDAC':
+            if Model in ['RDAC','RDACP']:
                 f_test=open('./experiment/'+Model+'/Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'_RQP'+str(rate_idx)+'.rgb','rb')
             else:
                 f_test=open('./experiment/'+Model+'/Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(rate_idx)+'.rgb','rb')       
@@ -66,7 +66,7 @@ if __name__ == "__main__":
             output_files = {}
             accumulated_metrics = {}
             for m in monitor.metrics:
-                if Model in ['RDAC']:
+                if Model in ['RDAC','RDACP']:
                     mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'_RQP'+str(rate_idx)+f'_{m}.txt'
                 else:
                     mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(rate_idx)+f'_{m}.txt'
@@ -110,9 +110,9 @@ if __name__ == "__main__":
     
     #Save the results to text
     for m in monitor.metrics:
-        if Model in ['RDAC']:
+        if Model in ['RDAC','RDACP']:
             mt_path = result_dir+testingdata_name+f"_result_rqp_{args['residual_coding_params']['rate_idx']}_{m}.txt"
         else:
             mt_path = result_dir+testingdata_name+f'_result_{m}.txt'
-        np.savetxt(mt_path, total_result[m], fmt = '%.5f')
+        np.savetxt(mt_path, total_result[f"totalResult_{m.upper()}"], fmt = '%.5f')
 

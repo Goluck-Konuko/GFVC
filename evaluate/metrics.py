@@ -54,19 +54,16 @@ if __name__ == "__main__":
             ### You should modify the path of original sequence and reconstructed sequence
             f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
 
-            if Model == 'RDAC':
-                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'_RQP'+str(args['residual_coding_params']['rate_idx'])+'.rgb','rb')
+            if Model in ['HEVC','VVC']:
+                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')
             else:
-                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')       
+                f_test=open('./experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')       
             
             #open files to store the computed metrics
             output_files = {}
             accumulated_metrics = {}
             for m in monitor.metrics:
-                if Model in ['RDAC']:
-                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'_RQP'+str(args['residual_coding_params']['rate_idx'])+f'_{m}.txt'
-                else:
-                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+f'_{m}.txt'
+                mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_QP'+str(qp)+f'_{m}.txt'
                 output_files.update({m:open(mt_out_path,'w')})
                 accumulated_metrics.update({m:0})
 
@@ -111,5 +108,5 @@ if __name__ == "__main__":
             mt_path = result_dir+testingdata_name+f"_result_rqp_{args['residual_coding_params']['rate_idx']}_{m}.txt"
         else:
             mt_path = result_dir+testingdata_name+f'_result_{m}.txt'
-        np.savetxt(mt_path, total_result[m], fmt = '%.5f')
+        np.savetxt(mt_path, total_result[f"totalResult_{m.upper()}"], fmt = '%.5f')
 

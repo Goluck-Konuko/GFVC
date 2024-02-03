@@ -88,7 +88,7 @@ if __name__ == "__main__":
                 img_input_yuv.tofile(f_temp)
                 f_temp.close()            
 
-                os.system("./vtm/encode.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
+                os.system("./image_codecs/vtm/encode.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
 
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8
@@ -108,7 +108,7 @@ if __name__ == "__main__":
                 img_input_rgb.tofile(f_temp)
                 f_temp.close()
 
-                os.system("./vtm/encode_rgb444.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
+                os.system("./image_codecs/vtm/encode_rgb444.sh "+dir_enc+'frame'+frame_idx_str+" "+QP+" "+str(width)+" "+str(height))   ########################
                 
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8

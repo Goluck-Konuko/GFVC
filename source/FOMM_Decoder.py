@@ -77,7 +77,7 @@ if __name__ == "__main__":
         if frame_idx in [0]:      # I-frame                      
           
             if Iframe_format=='YUV420':
-                os.system("./vtm/decode.sh "+dir_enc+'frame'+frame_idx_str)
+                os.system("./image_codecs/vtm/decode.sh "+dir_enc+'frame'+frame_idx_str)
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8
                 sum_bits += bits
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                 img_rec = resize(img_rec, (3, height, width))    # normlize to 0-1                                      
 
             elif Iframe_format=='RGB444':
-                os.system("./vtm/decode_rgb444.sh "+dir_enc+'frame'+frame_idx_str)
+                os.system("./image_codecs/vtm/decode_rgb444.sh "+dir_enc+'frame'+frame_idx_str)
                 bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
                 bits=os.path.getsize(bin_file)*8
                 sum_bits += bits

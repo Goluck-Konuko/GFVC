@@ -19,6 +19,7 @@ def count_bytes(strings):
 class LICEnc:
     def __init__(self,dec_dir:str,model_name:str='cheng2020attn',metric='mse', quality:int=6, device:str='cpu') -> None:
         self.codec = lic_models[model_name](quality=quality, pretrained=True).to(device)
+        self.codec.eval()
         self.dec_dir = dec_dir
         os.makedirs(self.dec_dir, exist_ok=True)
 

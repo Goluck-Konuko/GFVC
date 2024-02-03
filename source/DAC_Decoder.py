@@ -11,90 +11,95 @@ from arithmetic.value_encoder import *
 from arithmetic.value_decoder import *
 from typing import List
 
-
-
-class ReferenceImageDecoder:
-    def __init__(self, dir_enc:str, qp:int=22, height: int=256, width: int=256, format='YUV420') -> None:
-        self.dir_enc = dir_enc
-        self.qp = qp
-        self.height= height
+class RefereceImageDecoder:
+    def __init__(self,img_input_dir:str,frame_format:str='YUV420', width:int=256,height:int=256):
+        self.img_input_dir = img_input_dir
+        self.frame_format = frame_format
         self.width = width
-        self.format = format
+        self.height = height
 
-    def decompress_reference_yuv(self, frame_idx:int):
-        frame_idx_str = str(frame_idx)
-        os.system("./vtm/decode.sh "+self.dir_enc+'frame'+frame_idx_str)
-        bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
+    def vtm_yuv_decompress(self, frame_idx:int):
+        os.system("./image_codecs/vtm/decode.sh "+self.img_input_dir+'frame'+str(frame_idx))
+        bin_file=self.img_input_dir+'frame'+str(frame_idx)+'.bin'
         bits=os.path.getsize(bin_file)*8
 
         #  read the rec frame (yuv420) and convert to rgb444
-        rec_ref_yuv=yuv420_to_rgb444(self.dir_enc+'frame'+frame_idx_str+'_dec.yuv', self.width, self.height, 0, 1, False, False) 
+        rec_ref_yuv=yuv420_to_rgb444(self.img_input_dir+'frame'+str(frame_idx)+'_dec.yuv', self.width, self.height, 0, 1, False, False) 
         img_rec = rec_ref_yuv[0]
         img_rec = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
         img_rec.tofile(f_dec)                         
-        img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1
-        return img_rec , bits          
-                    
-    def decompress_reference_rgb(self, frame_idx: int)->np.ndarray:
-        frame_idx_str = str(frame_idx)
-        os.system("./vtm/decode_rgb444.sh "+self.dir_enc+'frame'+frame_idx_str)
-        bin_file=self.dir_enc+'frame'+frame_idx_str+'.bin'
+        img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1  
+        return img_rec, bits                                    
+
+    def vtm_rgb_decompress(self, frame_idx:int):
+        os.system("./image_codecs/vtm/decode_rgb444.sh "+self.img_input_dir+'frame'+str(frame_idx))
+        bin_file=dir_enc+'frame'+str(frame_idx)+'.bin'
         bits=os.path.getsize(bin_file)*8
 
-        f_temp=open(self.dir_enc+'frame'+frame_idx_str+'_dec.rgb','rb')
-        img_rec=np.fromfile(f_temp,np.uint8,3*height*width).reshape((3,self.height,self.width))   # 3xHxW RGB         
+        f_temp=open(self.img_input_dir+'frame'+str(frame_idx)+'_dec.rgb','rb')
+        img_rec=np.fromfile(f_temp,np.uint8,3*self.height*self.width).reshape((3,self.height,self.width))   # 3xHxW RGB         
         img_rec.tofile(f_dec) 
         img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1       
-        return img_rec, bits   
-
-    def decompress_reference(self,frame_idx:int)->np.ndarray:
-        if self.format == 'YUV420':
-            img_rec, bits = self.decompress_reference_yuv(frame_idx)
+        return img_rec, bits
+    
+    def decompress(self, frame_idx:int):
+        if self.frame_format == 'YUV420':
+            img_rec, bits = self.vtm_yuv_decompress(frame_idx)
+        elif self.frame_format == 'RGB444':
+            img_rec, bits = self.vtm_rgb_decompress(frame_idx)
         else:
-            img_rec, bits = self.decompress_reference_rgb(frame_idx)
+            raise NotImplementedError(f"Frame format '{self.frame_format}' not implemented!")
         return img_rec, bits
 
-
 class KPDecoder:
-    def __init__(self, kp_output_dir:str, q_step:int=64, device='cpu') -> None:
-        self.device= device
-        self.kp_output_dir = kp_output_dir
+    def __init__(self,kp_input_dir:str, q_step:int=64):
+        self.kp_input_dir = kp_input_dir
         self.q_step = q_step
+        self.rec_sem = []
 
-        #coding info
-        self.rec_sem=[]
-        self.reference_frame_idx = [0]
-
-    def decode_kp(self, frame_idx: int)->None:
+    def decode_kp(self, frame_idx:int):
         frame_index=str(frame_idx).zfill(4)
-        bin_save=self.kp_output_dir+'/frame'+frame_index+'.bin'            
-        kp_dec = final_decoder_expgolomb(bin_save)
+        bin_file=kp_input_dir+'/frame'+frame_index+'.bin' 
+        bits=os.path.getsize(bin_file)*8          
+        kp_dec = final_decoder_expgolomb(bin_file)
 
         ## decoding residual
         kp_difference = data_convert_inverse_expgolomb(kp_dec)
-        ## inverse quantization
+        ## inverse quanzation
         kp_difference_dec=[i/self.q_step for i in kp_difference]
         kp_difference_dec= eval('[%s]'%repr(kp_difference_dec).replace('[', '').replace(']', ''))  
-   
-        kp_previous= eval('[%s]'%repr(self.rec_sem[-1]).replace('[', '').replace(']', '').replace("'", ""))  
 
-        kp_integer,kp_value= listformat_kp_DAC(kp_previous, kp_difference_dec) #######
-        self.rec_sem.append(kp_integer)
-  
-        kp_value=json.loads(kp_value)
-        kp_target_value=torch.Tensor(kp_value).to(self.device)          
-        kp_target_decoded = {'value': kp_target_value.reshape((1,10,2))  }
-        return kp_target_decoded
+        kp_previous=self.rec_sem[frame_idx-1]    #json.loads(str(seq_kp_integer[frame_idx-1]))      
+        kp_previous= eval('[%s]'%repr(kp_previous).replace('[', '').replace(']', '').replace("'", ""))  
 
-    def load_metadata(self)->None:
-        bin_file=self.kp_output_dir+'metadata.bin'
+        kp_integer,kp_value=listformat_kp_DAC(kp_previous, kp_difference_dec) #######
+        self.rec_sem.append(kp_integer) 
+        return kp_value, bits
+
+    def get_kp_list(self, kp_value:torch.Tensor, frame_idx:int)->List[str]:
+        kp_value_list = kp_value.tolist()
+        kp_value_list = str(kp_value_list)
+        kp_value_list = "".join(kp_value_list.split())
+
+        with open(self.kp_input_dir+'/frame'+str(frame_idx)+'.txt','w')as f:
+            f.write(kp_value_list)  
+
+        kp_value_frame=json.loads(kp_value_list)###20
+        kp_value_frame= eval('[%s]'%repr(kp_value_frame).replace('[', '').replace(']', ''))
+        return kp_value_frame
+    
+    def read_metadata(self)->None:
+        bin_file=self.kp_input_dir+'metadata.bin'
+        bits=os.path.getsize(bin_file)*8  
+
         dec_metadata = final_decoder_expgolomb(bin_file)
         metadata = data_convert_inverse_expgolomb(dec_metadata)   
-        self.reference_frame_idx = [int(i) for i in metadata]
+        reference_frame_idx = [int(i) for i in metadata]
+        return reference_frame_idx, bits
 
-def to_tensor(frame: np.ndarray)->torch.Tensor:
-    return torch.tensor(frame[np.newaxis].astype(np.float32))
-
+class AdaptiveDecoder:
+    def __init__(self) -> None:
+        pass
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -108,7 +113,6 @@ if __name__ == "__main__":
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=20, type=float,help="Reference selection threshold")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
-    
     opt = parser.parse_args()
     
     
@@ -135,15 +139,15 @@ if __name__ == "__main__":
     
 ###################################################
 
-    kp_output_dir =model_dirname+'/kp/'+seq+'_QP'+str(QP)+'/'   
+    kp_input_dir =model_dirname+'/kp/'+seq+'_QP'+str(QP)+'/'   
 
     dir_dec=model_dirname+'/dec/'
     os.makedirs(dir_dec,exist_ok=True)     # the real decoded video  
     decode_seq=dir_dec+seq+'_QP'+str(QP)+'.rgb'
 
-    dir_enc =model_dirname+'/enc/'+seq+'_QP'+str(QP)+'/'
-    os.makedirs(dir_enc,exist_ok=True)     # the frames to be compressed by vtm     
-
+    #This folder is created by the encoder
+    enc_input_dir =model_dirname+'/enc/'+seq+'_QP'+str(QP)+'/'
+ 
     dir_bit=model_dirname+'/resultBit/'
     os.makedirs(dir_bit,exist_ok=True)        
 
@@ -155,45 +159,40 @@ if __name__ == "__main__":
     gene_time = 0
     sum_bits = 0
 
-    image_decoder = ReferenceImageDecoder(dir_enc, qp=QP, height=height,width=width, format=Iframe_format)
-    kp_decoder = KPDecoder(kp_output_dir,q_step=Qstep, device=device)
-    kp_decoder.load_metadata()
-
-    for frame_idx in tqdm(range(0, frames)):            
-        frame_idx_str = str(frame_idx).zfill(4)   
-        if frame_idx in kp_decoder.reference_frame_idx:      # I-frame                      
-            img_rec, bits = image_decoder.decompress_reference(frame_idx)                                     
+    ref_decoder = RefereceImageDecoder(enc_input_dir,Iframe_format)
+    kp_decoder = KPDecoder(kp_input_dir,Qstep)
+    ref_frame_idx, mt_bits = kp_decoder.read_metadata()
+    sum_bits += mt_bits
+    for frame_idx in tqdm(range(0, frames)):             
+        if frame_idx in ref_frame_idx:      # I-frame                      
+            img_rec, ref_bits = ref_decoder.decompress(frame_idx)
+            sum_bits+=ref_bits
             with torch.no_grad(): 
-                reference = to_tensor(img_rec).to(device)
+                reference = torch.tensor(img_rec[np.newaxis].astype(np.float32))
+                reference = reference.to(device)    # require GPU | changed to use cpu when GPU not available
+
                 kp_reference = DAC_Analysis_Model(reference) 
 
                 ####
-                kp_value = kp_reference['value']
-                kp_value_list = kp_value.tolist()
-                kp_value_list = str(kp_value_list)
-                kp_value_list = "".join(kp_value_list.split())
-
-                kp_value_frame=json.loads(kp_value_list)###20
-                kp_value_frame= eval('[%s]'%repr(kp_value_frame).replace('[', '').replace(']', ''))
-                kp_integer=str(kp_value_frame) 
-                #Use the reference kp to reconstruct the subsequent frames
-                kp_decoder.rec_sem.append(kp_integer)
+                kp_value_frame = kp_decoder.get_kp_list(kp_reference['value'], frame_idx)
+                kp_decoder.rec_sem.append(kp_value_frame)
         else:
-            kp_target_decoded = kp_decoder.decode_kp(frame_idx)                  
+            kp_value, kp_bits = kp_decoder.decode_kp(frame_idx)                   
+
+            kp_inter_frame={}
+            kp_value=json.loads(kp_value)
+            kp_inter_frame['value']=torch.Tensor(kp_value).reshape((1,10,2)).to(device)          
+
             # generated frame
             gene_start = time.time()
 
-            prediction = make_DAC_prediction(reference, kp_target_decoded, kp_reference, DAC_Synthesis_Model, cpu=cpu) #######################
+            prediction = make_DAC_prediction(reference, kp_inter_frame, kp_reference, DAC_Synthesis_Model, cpu=cpu) #######################
 
             gene_end = time.time()
             gene_time += gene_end - gene_start
             pre=(prediction*255).astype(np.uint8)  
             pre.tofile(f_dec)                              
-
-            frame_index=str(frame_idx).zfill(4)
-            bin_save=kp_output_dir+'/frame'+frame_index+'.bin'
-            bits=os.path.getsize(bin_save)*8
-        sum_bits += bits
+            sum_bits += kp_bits
 
     f_dec.close()     
     end=time.time()
