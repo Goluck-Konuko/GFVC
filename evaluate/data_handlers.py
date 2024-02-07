@@ -39,7 +39,7 @@ class GFVCDataHandler:
                 for s in target_files:
                     s_data = self._read_data(f"{self.data_dir}/{s}")
                     m_data.append(s_data)
-                qp_metrics[m] = np.mean(m_data, axis=0) #compute the mean for all the sequences per frame
+                qp_metrics[m] = np.mean(m_data, axis=0).tolist() #compute the mean for all the sequences per frame
 
             #get the average BR, Encoding and Decoding Time
             bitrate, enc_time, dec_time = self._get_br_metrics(bitrate_dir,br_files)
@@ -91,14 +91,10 @@ class RDACDataHandler(GFVCDataHandler):
             # for m in self.metrics:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
-            if self.codec in ['rdac','rdacp']:
-                filter = f"QP4_RQP{qp}"
-                bitrate_dir = self.bitrate_dir+f"{qp}"
-            else:
-                filter = f"QP{qp}"
-                bitrate_dir = self.bitrate_dir
+            filter = f"QP4_RQP{qp}"
+            bitrate_dir = self.bitrate_dir+f"{qp}"
             seqs = sorted([x for x in seqs if filter in x], key= lambda x: x.split('_')[1])
-            br_files = [x for x in os.listdir(bitrate_dir) if filter in x]
+            br_files = [x for x in os.listdir(bitrate_dir) if self.dataset_name in x]
             #read the evaluation data for each metric for all the sequences and compute averages
             qp_metrics = {}
             for m in self.metrics:
@@ -111,7 +107,7 @@ class RDACDataHandler(GFVCDataHandler):
                 for s in target_files:
                     s_data = self._read_data(f"{self.data_dir}/{s}")
                     m_data.append(s_data)
-                qp_metrics[m] = np.mean(m_data, axis=0) #compute the mean for all the sequences per frame
+                qp_metrics[m] = np.mean(m_data, axis=0).tolist() #compute the mean for all the sequences per frame
 
             #get the average BR, Encoding and Decoding Time
             bitrate, enc_time, dec_time = self._get_br_metrics(bitrate_dir,br_files)
@@ -174,7 +170,7 @@ class AnchorDataHandler(GFVCDataHandler):
                 for s in target_files:
                     s_data = self._read_data(f"{self.data_dir}/{s}")
                     m_data.append(s_data)
-                qp_metrics[m] = np.mean(m_data, axis=0) #compute the mean for all the sequences per frame
+                qp_metrics[m] = np.mean(m_data, axis=0).tolist() #compute the mean for all the sequences per frame
             out[qp] = qp_metrics
         # print(out)
         #read bitrate metrics
@@ -186,5 +182,5 @@ class AnchorDataHandler(GFVCDataHandler):
         with open(self.bitrate_dir, 'r') as out:
             br_info = out.read().splitlines()
         br = np.array([[float(y) for y in (x.split(' '))] for x in br_info])
-        br_avg = np.mean(br, axis=0)
+        br_avg = np.mean(br, axis=0).tolist()
         return br_avg

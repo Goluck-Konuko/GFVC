@@ -93,7 +93,6 @@ class ResidualCoder(CompressionModel):
     def estimate_bitrate(self, likelihood):
         return torch.sum(-torch.log2(torch.clamp(likelihood, 2 ** (-16), 1.0))) 
     
-
     def compute_gain(self, x: torch.Tensor, rate_idx: int,hyper=False)-> torch.Tensor:
         if hyper:
             x =  x * torch.abs(self.hyper_gain[rate_idx]).unsqueeze(0).unsqueeze(2).unsqueeze(3)
@@ -161,40 +160,48 @@ class ResidualCoder(CompressionModel):
 
     def similarity(self, prev, cur)->torch.Tensor:
         cos = nn.CosineSimilarity(dim=1, eps=1e-6)
-        output = cos(prev, cur)
-        return output
+        return cos(prev, cur)
 
-    def rans_compress(self, residual, rate_idx=0, q_value=0.0,**kwargs):
+    def rans_compress(self, residual,prev_latent, rate_idx=0, q_value=0.0,use_skip=False,skip_thresh=0.75, **kwargs):
         enc_start = time.time()
         y = self.g_a(residual)
-        if self.variable_bitrate:
-            y = self.compute_interpolated_gain(y, rate_idx, q_value)
-    
-        z = self.h_a(y)
-        if self.variable_bitrate:
-            z = self.compute_interpolated_gain(z, rate_idx, q_value, hyper=True)
+        #compute similarity with previous latent
+        if prev_latent != None and use_skip:
+            sim = torch.mean(self.similarity(prev_latent, y)).item()
+        else:
+            sim = 0
+        if sim > skip_thresh:
+            #skip this residual
+            return None, True
+        else:
+            if self.variable_bitrate:
+                y = self.compute_interpolated_gain(y, rate_idx, q_value)
         
-        z_strings = self.entropy_bottleneck.compress(z)
-        z_hat = self.entropy_bottleneck.decompress(z_strings, z.size()[-2:])
-        if self.variable_bitrate:
-            z_hat = self.compute_inverse_interpolated_gain(z_hat, rate_idx, q_value, hyper=True)
+            z = self.h_a(y)
+            # if self.variable_bitrate:
+            #     z = self.compute_interpolated_gain(z, rate_idx, q_value, hyper=True)
+            
+            z_strings = self.entropy_bottleneck.compress(z)
+            z_hat = self.entropy_bottleneck.decompress(z_strings, z.size()[-2:])
+            if self.variable_bitrate:
+                z_hat = self.compute_inverse_interpolated_gain(z_hat, rate_idx, q_value, hyper=True)
 
-        gaussian_params = self.h_s(z_hat)
-        scales_hat, means_hat = gaussian_params.chunk(2, 1)
-        
-        # scale_h, mean_h = self.get_averages(scales_hat, means_hat, H,W)
-        indexes = self.gaussian_conditional.build_indexes(scales_hat)
-        y_strings = self.gaussian_conditional.compress(y, indexes, means=means_hat)
-        bits = (len(y_strings[0])+len(z_strings[0])) * 8
-        enc_time = time.time() - enc_start
-        dec_start = time.time()
-        res_hat, y_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
-        dec_time = time.time() - dec_start
-        #update bitstream info
-        out = {'time':{'enc_time': enc_time,'dec_time': dec_time},
-                'bits':bits, 'bitstring': {'strings':[y_strings, z_strings], 'shape':z.size()[-2:]}}
-        out.update({'res_hat':res_hat,'res_latent_hat':y_hat})
-        return out
+            gaussian_params = self.h_s(z_hat)
+            scales_hat, means_hat = gaussian_params.chunk(2, 1)
+            
+            # scale_h, mean_h = self.get_averages(scales_hat, means_hat, H,W)
+            indexes = self.gaussian_conditional.build_indexes(scales_hat)
+            y_strings = self.gaussian_conditional.compress(y, indexes, means=means_hat)
+            bits = (len(y_strings[0])+len(z_strings[0])) * 8
+            enc_time = time.time() - enc_start
+            dec_start = time.time()
+            res_hat, y_hat = self.rans_decompress([y_strings, z_strings], z.size()[-2:],rate_idx=rate_idx, q_value=q_value)
+            dec_time = time.time() - dec_start
+            #update bitstream info
+            out = {'time':{'enc_time': enc_time,'dec_time': dec_time},
+                    'bits':bits, 'bitstring': {'strings':[y_strings, z_strings], 'shape':z.size()[-2:]}}
+            out.update({'res_hat':res_hat,'res_latent_hat':y_hat})
+            return out, False
 
     def rans_decompress(self, strings, shape, rate_idx=0, q_value=0.0, **kwargs):
         assert isinstance(strings, list) and len(strings) == 2

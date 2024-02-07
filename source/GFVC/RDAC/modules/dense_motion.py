@@ -6,14 +6,14 @@ from GFVC.DAC.modules.util import Hourglass, AntiAliasInterpolation2d, \
                                     Mask, OutputLayer
 
 
-class DenseMotionNetwork(nn.Module):
+class DenseMotionGenerator(nn.Module):
     """
     Module that predicting a dense motion from sparse motion representation given by kp_reference and kp_target
     """
 
     def __init__(self, block_expansion=64, num_blocks=2, max_features=1024, num_kp=10, num_channels=3, estimate_occlusion_map=False,
                  scale_factor=1, kp_variance=0.01,norm='batch',qp=False, **kwargs):
-        super(DenseMotionNetwork, self).__init__()
+        super(DenseMotionGenerator, self).__init__()
         self.hourglass = Hourglass(block_expansion=block_expansion, in_features=(num_kp + 1) * (num_channels + 1),
                                    max_features=max_features, num_blocks=num_blocks)
 
@@ -60,6 +60,13 @@ class DenseMotionNetwork(nn.Module):
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - kp_target['value'].view(bs, self.num_kp, 1, 1, 2)
         
+        if 'jacobian' in kp_target:
+            jacobian = torch.matmul(kp_reference['jacobian'], torch.inverse(kp_target['jacobian']))
+            jacobian = jacobian.unsqueeze(-3).unsqueeze(-3)
+            jacobian = jacobian.repeat(1, 1, h, w, 1, 1)
+            coordinate_grid = torch.matmul(jacobian, coordinate_grid.unsqueeze(-1))
+            coordinate_grid = coordinate_grid.squeeze(-1)
+
         target_to_reference = coordinate_grid + kp_reference['value'].view(bs, self.num_kp, 1, 1, 2)
 
         #adding background feature

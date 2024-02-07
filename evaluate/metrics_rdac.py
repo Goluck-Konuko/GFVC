@@ -29,7 +29,7 @@ if __name__ == "__main__":
     Iframe_format=args['iframe_format']   ## 'YUV420'  OR 'RGB444'
     
     if Model in ['RDAC','RDACP']:
-        qplist = [4]
+        qplist = [0,1,2,3]
     else:
         qplist= args['qp_list'] 
     

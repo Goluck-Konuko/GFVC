@@ -140,6 +140,13 @@ if __name__ == "__main__":
 
     ## Generate Plots
     output_path = f"experiment/plots/{args.dataset_name.upper()}"
-    plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
-    plotter.plot_temporal_comparison(codec_data)
-    plotter.plot_rd_comparison(codec_data)
+    # plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
+    # plotter.plot_temporal_comparison(codec_data)
+    # plotter.plot_rd_comparison(codec_data)
+
+    all_metrics = {}
+    for codec in codec_data:
+        all_metrics[codec] = codec_data[codec].data
+    import json  
+    with open(f"experiment/plots/baseline_metrics.json", 'w') as out:
+        json.dump(all_metrics, out)
