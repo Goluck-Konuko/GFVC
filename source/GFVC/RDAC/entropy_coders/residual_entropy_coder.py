@@ -17,6 +17,7 @@ import json
 import torch
 import contextlib
 import numpy as np
+from copy import copy
 from tempfile import mkstemp
 from typing import Dict, Any, List
 from .ppm_model import PpmModel
@@ -257,8 +258,9 @@ class ResEntropyCoder:
         return res_frame_list
 
     def encode_metadata(self)->None:
+        data = copy(self.metadata)
         bin_file=self.res_output_dir+'/metadata.bin'
-        final_encoder_expgolomb(self.metadata,bin_file)     
+        final_encoder_expgolomb(data,bin_file)     
         bits=os.path.getsize(bin_file)*8
         return bits
     
@@ -369,12 +371,12 @@ class ResEntropyDecoder(BasicEntropyCoder):
         # Logic for order = -1
         return dec.read(model.order_minus1_freqs)
 
-    def load_metadata(self)->None:
+    def read_metadata(self)->None:
         bin_file=self.res_output_dir+'metadata.bin'
         dec_metadata = final_decoder_expgolomb(bin_file)
         metadata = data_convert_inverse_expgolomb(dec_metadata)   
-        self.metadata = [int(i) for i in metadata]
-        return os.path.getsize(bin_file)*8
+        metadata = [int(i) for i in metadata]
+        return metadata, os.path.getsize(bin_file)*8
 
 def dataconvert_expgolomb(symbol):
     '''Creates non-negative interger list'''

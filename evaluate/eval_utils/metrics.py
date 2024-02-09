@@ -349,8 +349,208 @@ class DISTS_IQA(MetricParent):
         dec = torch.tensor(dec[np.newaxis].astype(np.float32)).to(self.device)
         ans = self.dists(org, dec).item()  
         return ans
-    
+
+
+class VMAF_IQA(MetricParent):
+    def __init__(self, *args, **kwards):
+        super().__init__(*args, **kwards, name='VMAF')
+        import platform
+        if platform.system() == 'Linux':
+            self.URL = 'https://github.com/Netflix/vmaf/releases/download/v2.2.1/vmaf'
+            self.OUTPUT_NAME = os.path.join(os.path.dirname(__file__),
+                                            'vmaf.linux')
+        else:
+            # TODO: check that
+            self.URL = 'https://github.com/Netflix/vmaf/releases/download/v2.2.1/vmaf.exe'
+            self.OUTPUT_NAME = os.path.join(os.path.dirname(__file__),
+                                            'vmaf.exe')
+
+    def download(self, url, output_path):
+        import requests
+        r = requests.get(url, stream=True)  # , verify=False)
+        if r.status_code == 200:
+            with open(output_path, 'wb') as f:
+                for chunk in r:
+                    f.write(chunk)
+
+    def check(self):
+        if not os.path.exists(self.OUTPUT_NAME):
+            import stat
+            self.download(self.URL, self.OUTPUT_NAME)
+            os.chmod(self.OUTPUT_NAME, stat.S_IEXEC)
+
+    def calc(self, org: np.ndarray, dec: np.ndarray) -> float:
+
+        import subprocess
+        import tempfile
+        fp_o = tempfile.NamedTemporaryFile(delete=False)
+        fp_r = tempfile.NamedTemporaryFile(delete=False)
+
+        write_yuv(org, fp_o, self.bits)
+        write_yuv(dec, fp_r, self.bits)
+
+        out_f = tempfile.NamedTemporaryFile(delete=False)
+        out_f.close()
+
+        self.check()
+
+        args = [
+            self.OUTPUT_NAME, '-r', fp_o.name, '-d', fp_r.name, '-w',
+            str(org['Y'].shape[1]), '-h',
+            str(org['Y'].shape[0]), '-p', '420', '-b',
+            str(self.bits), '-o', out_f.name, '--json'
+        ]
+        subprocess.run(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        import json
+        with open(out_f.name, 'r') as f:
+            tmp = json.load(f)
+        ans = tmp['frames'][0]['metrics']['vmaf']
+
+        os.unlink(fp_o.name)
+        os.unlink(fp_r.name)
+        os.unlink(out_f.name)
+
+        return ans
+
+import torch.nn.functional as F
+from torchvision import models
+
+
+class AntiAliasInterpolation2d(nn.Module):
+    """
+    Band-limited downsampling, for better preservation of the input signal.
+    """
+    def __init__(self, channels, scale):
+        super(AntiAliasInterpolation2d, self).__init__()
+        sigma = (1 / scale - 1) / 2
+        kernel_size = 2 * round(sigma * 4) + 1
+        self.ka = kernel_size // 2
+        self.kb = self.ka - 1 if kernel_size % 2 == 0 else self.ka
+
+        kernel_size = [kernel_size, kernel_size]
+        sigma = [sigma, sigma]
+        # The gaussian kernel is the product of the
+        # gaussian function of each dimension.
+        kernel = 1
+        meshgrids = torch.meshgrid(
+            [
+                torch.arange(size, dtype=torch.float32)
+                for size in kernel_size
+                ]
+        )
+        for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
+            mean = (size - 1) / 2
+            kernel *= torch.exp(-(mgrid - mean) ** 2 / (2 * std ** 2))
+
+        # Make sure sum of values in gaussian kernel equals 1.
+        kernel = kernel / torch.sum(kernel)
+        # Reshape to depthwise convolutional weight
+        kernel = kernel.view(1, 1, *kernel.size())
+        kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
+
+        self.register_buffer('weight', kernel)
+        self.groups = channels
+        self.scale = scale
+
+    def forward(self, input):
+        if self.scale == 1.0:
+            return input
+
+        out = F.pad(input, (self.ka, self.kb, self.ka, self.kb))
+        out = F.conv2d(out, weight=self.weight, groups=self.groups)
+        out = F.interpolate(out, scale_factor=(self.scale, self.scale),mode='bilinear', align_corners=True)
+
+        return out
+  
+
+class Vgg19(torch.nn.Module):
+    """
+    Vgg19 network for perceptual loss. See Sec 3.3.
+    """
+    def __init__(self, requires_grad=False):
+        super(Vgg19, self).__init__()
+        vgg_pretrained_features = models.vgg19(weights='DEFAULT').features
+        self.slice1 = torch.nn.Sequential()
+        self.slice2 = torch.nn.Sequential()
+        self.slice3 = torch.nn.Sequential()
+        self.slice4 = torch.nn.Sequential()
+        self.slice5 = torch.nn.Sequential()
+        for x in range(2):
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(2, 7):
+            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(7, 12):
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(12, 21):
+            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(21, 30):
+            self.slice5.add_module(str(x), vgg_pretrained_features[x])
+
+        self.mean = torch.nn.Parameter(data=torch.Tensor(np.array([0.485, 0.456, 0.406]).reshape((1, 3, 1, 1))),
+                                       requires_grad=False)
+        self.std = torch.nn.Parameter(data=torch.Tensor(np.array([0.229, 0.224, 0.225]).reshape((1, 3, 1, 1))),
+                                      requires_grad=False)
+
+        if not requires_grad:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def forward(self, X):
+        X = (X - self.mean) / self.std
+        h_relu1 = self.slice1(X)
+        h_relu2 = self.slice2(h_relu1)
+        h_relu3 = self.slice3(h_relu2)
+        h_relu4 = self.slice4(h_relu3)
+        h_relu5 = self.slice5(h_relu4)
+        out = [h_relu1, h_relu2, h_relu3, h_relu4, h_relu5]
+        return out
+
+class ImagePyramide(nn.Module):
+    """
+    Create image pyramide for computing pyramide perceptual loss. See Sec 3.3
+    """
+    def __init__(self, scales, num_channels):
+        super(ImagePyramide, self).__init__()
+        downs = {}
+        for scale in scales:
+            downs[str(scale).replace('.', '-')] = AntiAliasInterpolation2d(num_channels, scale)
+        self.downs = nn.ModuleDict(downs)
+
+    def forward(self, x):
+        out_dict = {}
+        for scale, down_module in self.downs.items():
+            out_dict['prediction_' + str(scale).replace('-', '.')] = down_module(x)
+        return out_dict
+
+
+class MSVGG_IQA(MetricParent):
+    def __init__(self,device, *args, **kwargs):
+        super().__init__(*args, **kwargs, name='msVGG')
+        self.loss_weights = [10, 10, 10, 10, 10]
+        self.scales  = [1, 0.5, 0.25,0.125]
+        self.wm_scales = [1, 0.5, 0.25, 0.125, 0.0625]
+        self.device = device
+        self.vgg = Vgg19().to(self.device)
+        self.pyramid = ImagePyramide(self.scales, 3).to(self.device)
+
+ 
+    def calc(self, org: np.array, dec: np.array)->float: 	
+        org = torch.tensor(org[np.newaxis].astype(np.float32)).to(self.device)
+        dec = torch.tensor(dec[np.newaxis].astype(np.float32)).to(self.device)
         
+        pyramide_real = self.pyramid(org)
+        pyramide_generated = self.pyramid(dec)
+        value_total = 0.0
+        for scale in self.scales:
+            x_vgg = self.vgg(pyramide_generated['prediction_' + str(scale)])
+            y_vgg = self.vgg(pyramide_real['prediction_' + str(scale)])
+
+            for i, _ in enumerate(self.loss_weights):
+                value = torch.abs(x_vgg[i] - y_vgg[i].detach()).mean()
+                value_total += value*self.loss_weights[i]
+        return value_total.detach().cpu().item()
+
+
 class MultiMetric:
     def __init__(self,metrics: List[str] = ['psnr','fsim','lpips','dists','ms_ssim','ssim'], device='cpu') -> None:
         
@@ -374,6 +574,13 @@ class MultiMetric:
         if 'dists' in self.metrics:
             self.monitor.update({'dists':DISTS_IQA(device=device)})
 
+        if 'msVGG' in self.metrics:
+            self.monitor.update({'msVGG':MSVGG_IQA(device=device)})
+
+        if 'vmaf' in self.metrics:
+            self.monitor.update({'vmaf':VMAF_IQA()})
+
+
     def compute_metrics(self,org: np.ndarray, dec: np.ndarray)-> Dict[str,float]:
         output = {}
 
@@ -389,7 +596,7 @@ class MultiMetric:
             if metric =='ssim':
                 #use uint8 RGB input :: TO-DO (MAYBE THIS SHOULD BE MOVED TO YUV[0-1])
                 val = self.monitor[metric].calc(org, dec) 
-            elif metric in ['lpips','dists','fsim']:
+            elif metric in ['lpips','dists','fsim','msVGG']:
                 #use RGB input as float 32
                 val = self.monitor[metric].calc(org_rgb_float, dec_rgb_float) 
             else:

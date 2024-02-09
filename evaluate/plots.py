@@ -105,8 +105,8 @@ class Plotter:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="fomm,cfte,dac,hevc,vvc", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
-    parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
+    parser.add_argument("--codecs", default="dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists,msVGG,vmaf", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
     parser.add_argument("--qps", default="32,35,38,42,45,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
     parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
     parser.add_argument('--format', default="yuv420", type=str, help="Format for compressing the reference frame [yuv420 | rgb444]")
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     for codec in args.codecs:
         if codec in ['fv2v','cfte','fomm','dac']:
             #Reference frame QP values
-            qp_list = ['22',"32","42"]
+            qp_list = ['22',"32","42",'52']
         elif codec in ['hevc']:
             qp_list = ["35","38","42","45","51"]
         elif codec in ['rdac','rdacp']:
@@ -140,13 +140,13 @@ if __name__ == "__main__":
 
     ## Generate Plots
     output_path = f"experiment/plots/{args.dataset_name.upper()}"
-    # plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
-    # plotter.plot_temporal_comparison(codec_data)
-    # plotter.plot_rd_comparison(codec_data)
+    plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
+    plotter.plot_temporal_comparison(codec_data)
+    plotter.plot_rd_comparison(codec_data)
 
-    all_metrics = {}
-    for codec in codec_data:
-        all_metrics[codec] = codec_data[codec].data
-    import json  
-    with open(f"experiment/plots/baseline_metrics.json", 'w') as out:
-        json.dump(all_metrics, out)
+    # all_metrics = {}
+    # for codec in codec_data:
+    #     all_metrics[codec] = codec_data[codec].data
+    # import json  
+    # with open(f"experiment/plots/baseline_metrics.json", 'w') as out:
+    #     json.dump(all_metrics, out)

@@ -1,22 +1,13 @@
 # +
-from torch import nn
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from GFVC.FOMM.modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d
-
-from PIL import Image
-import matplotlib.pyplot as plt
-import torchvision.transforms as transforms
-import numpy as np
-
-
-# -
 
 class KPDetector(nn.Module):
     """
     Detecting a keypoints. Return keypoint position and jacobian near each keypoint.
     """
-
     def __init__(self, block_expansion, num_kp, num_channels, max_features,
                  num_blocks, temperature, estimate_jacobian=False, scale_factor=1,
                  single_jacobian_map=False, pad=0):

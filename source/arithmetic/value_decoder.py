@@ -155,7 +155,7 @@ def data_convert_inverse_expgolomb(datares_rec):
 
 ############################################
 
-def listformat_adptive_CFTE(refframetensor, true_ae_number, num_channel,N_size):    
+def listformat_adaptive_cfte(refframetensor, true_ae_number, num_channel,N_size):    
     length=N_size*N_size ##############
     listnum=N_size  ###########
     slidelist=int(length/listnum)
@@ -189,7 +189,7 @@ def listformat_adptive_CFTE(refframetensor, true_ae_number, num_channel,N_size):
 
 
 
-def listformat_kp_mat_exp_FV2V(refframetensor, true_ae_number):
+def listformat_kp_mat_exp_fv2v(refframetensor, true_ae_number):
     
     group=57
     ##按照模型所需格式进行重组的相关参数设置
@@ -294,20 +294,6 @@ def listformat_kp_DAC(refframetensor, true_ae_number, group=10):
         latentformatslide1=reallatentvalue_split1[slideformat1*listnum:(slideformat1+1)*listnum]
         latentformat1.extend([latentformatslide1])
     latentformat1=[reallatentvalue] #[latentformat1]       
-
-    ###jocobi
-    # reallatentvalue_split2=reallatentvalue[1*listsplit:3*listsplit]
-    # latentformat2=[]
-    # for slideformat2 in range(0,int((group/(1+2)*2)/listnum)):
-    #     latentformatslide2=reallatentvalue_split2[slideformat2*listnum:(slideformat2+1)*listnum]
-    #     latentformat2.extend([latentformatslide2])
-    
-    # latentformat2_final=[]
-    # for sub in range(int(len(latentformat2)/2)):
-    #     latentformatslide2_final= [latentformat2[sub*2],latentformat2[sub*2+1]]
-    #     latentformat2_final.append(latentformatslide2_final)
-    
-    # latentformat2_final=[latentformat2_final]
 
     ###保存恢复的真实的数据格式
     latentformat1=str(latentformat1)

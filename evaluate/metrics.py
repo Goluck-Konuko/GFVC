@@ -55,9 +55,9 @@ if __name__ == "__main__":
             f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
 
             if Model in ['HEVC','VVC']:
-                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')
+                f_test=open('./experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'.rgb','rb')
             else:
-                f_test=open('./experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb','rb')       
+                f_test=open('./experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'.rgb','rb')       
             
             #open files to store the computed metrics
             output_files = {}
@@ -88,7 +88,7 @@ if __name__ == "__main__":
             f_test.close()
 
             end=time.time()
-            print(testingdata_name+'_'+str(seq)+'_QP'+str(qp)+'.rgb',"success. Time is %.4f"%(end-start))
+            print(testingdata_name+'_'+str(seq)+'_qp'+str(qp)+'.rgb',"success. Time is %.4f"%(end-start))
             qpIdx+=1
         seqIdx+=1
 

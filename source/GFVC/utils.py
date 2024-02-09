@@ -1,16 +1,14 @@
-import os, sys
 import yaml
 from tqdm import tqdm
-import imageio
-import numpy as np
-import scipy.io as io
-import json
 import cv2
+import torch
+import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
+from typing import Protocol
 
 
-def RawReader_planar(FileName, ImgWidth, ImgHeight, NumFramesToBeComputed):
+def raw_reader_planar(FileName, ImgWidth, ImgHeight, NumFramesToBeComputed):
     
     f   = open(FileName, 'rb')
     frames  = NumFramesToBeComputed
@@ -84,7 +82,7 @@ def yuv420_to_rgb444(yuvfilename, W, H, startframe, totalframe, show=False, out=
             arr[i] = oneframe_RGB
     return arr
 
-import torch
+
 def to_tensor(frame: np.ndarray)->torch.Tensor:
     return torch.tensor(frame[np.newaxis].astype(np.float32))
 
@@ -111,8 +109,137 @@ class AverageMeter:
         self.avg = self.sum / self.count
 
 def frame2tensor(frame: np.ndarray)->torch.Tensor:
+    frame = frame/255.0
     return torch.tensor(frame[np.newaxis].astype(np.float32))
 
 def tensor2frame(frame:torch.Tensor)->np.ndarray:
     pred = frame.detach().cpu().numpy()[0]
     return (pred*255).astype(np.uint8) 
+
+import os
+from image_codecs.lic import LICEnc, LICDec
+from skimage.transform import resize
+from typing import  List
+from image_codecs.lic import LICEnc
+class ReferenceImageCoder:
+    def __init__(self,img_output_dir:str,qp:int, iframe_format:str, width:int=256, height:int=256,
+                 codec_name:str='vtm', model_name:str='cheng2020attn',device:str='cpu'):
+        self.iframe_format = iframe_format
+        self.qp = qp
+        self.width=width
+        self.height=height
+        self.img_output_dir = img_output_dir
+        self.codec_name = codec_name
+        self.device = device
+        if self.codec_name == 'lic':
+            self.lic_enc = LICEnc(self.img_output_dir,model_name=model_name, quality=int(self.qp), device=self.device)
+        else:
+            self.lic_enc = None
+
+
+    def vtm_yuv_compress(self, frame_idx_str:str)->tuple:
+        # wtite ref and cur (rgb444) to file (yuv420) 
+              
+        os.system("./image_codecs/vtm/encode.sh "+self.img_output_dir+'frame'+frame_idx_str+" "+self.qp+" "+str(self.width)+" "+str(self.height))   ########################
+
+        bin_file=self.img_output_dir+'frame'+frame_idx_str+'.bin'
+        bits=os.path.getsize(bin_file)*8
+        
+        #  read the rec frame (yuv420) and convert to rgb444
+        rec_ref_yuv=yuv420_to_rgb444(self.img_output_dir+'frame'+frame_idx_str+'_rec.yuv', self.width, self.height, 0, 1, False, False) 
+        img_rec = rec_ref_yuv[0]
+        img_rec = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
+        img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1  
+        return img_rec, bits               
+    
+    def vtm_rgb_compress(self, frame_idx_str)->tuple:
+        # wtite ref and cur (rgb444) 
+        os.system("./image_codecs/vtm/encode_rgb444.sh "+self.img_output_dir+'frame'+frame_idx_str+" "+self.qp+" "+str(self.width)+" "+str(self.height))   ########################
+        
+        bin_file=self.img_output_dir+'frame'+frame_idx_str+'.bin'
+        bits=os.path.getsize(bin_file)*8
+        
+        f_temp=open(self.img_output_dir+'frame'+frame_idx_str+'_rec.rgb','rb')
+        img_rec=np.fromfile(f_temp,np.uint8,3*self.height*self.width).reshape((3,self.height,self.width))   # 3xHxW RGB         
+        img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1                  
+        return img_rec, bits  
+    
+    def compress(self, reference_frame: List[np.ndarray], frame_idx:int)->tuple:
+        frame_idx_str= str(frame_idx).zfill(4) 
+        if self.codec_name == 'vtm':
+            if self.iframe_format=='YUV420':
+                f_temp=open(self.img_output_dir+'frame'+frame_idx_str+'_org.yuv','w')
+                img_input_rgb = cv2.merge(reference_frame)
+                img_input_yuv = cv2.cvtColor(img_input_rgb, cv2.COLOR_RGB2YUV_I420)  #COLOR_RGB2YUV
+                img_input_yuv.tofile(f_temp)
+                f_temp.close()   
+
+                img_rec, bits = self.vtm_yuv_compress(frame_idx_str)
+            elif self.iframe_format=='RGB444':
+                f_temp=open(self.img_output_dir+'frame'+frame_idx_str+'_org.rgb','w')
+                img_input_rgb = cv2.merge(reference_frame)
+                img_input_rgb = img_input_rgb.transpose(2, 0, 1)   # 3xHxW
+                img_input_rgb.tofile(f_temp)
+                f_temp.close()
+
+                img_rec, bits = self.vtm_rgb_compress(frame_idx_str)
+            else:
+                raise NotImplementedError(f"Coding in format {self.frame_format} not implemented")
+        else:
+            ref = torch.tensor(np.array(reference_frame)/255.0, dtype=torch.float32).unsqueeze(0)
+            ref_img = ref.to(self.device)
+            dec_info = self.lic_enc.compress(ref_img, frame_idx_str)
+            img_rec = dec_info['x_hat']
+            bits = dec_info['bits']
+        return img_rec, bits
+  
+
+class RefereceImageDecoder:
+    '''Wrapper for Image decoders [VTM, BPG, LICs]'''
+    def __init__(self,img_input_dir:str,qp:int=4,iframe_format:str='YUV420', width:int=256,height:int=256, dec_name='vtm', model_name="cheng2020attn",device='cpu'):
+        self.img_input_dir = img_input_dir
+        self.iframe_format = iframe_format
+        self.width = width
+        self.height = height
+        self.qp = qp
+        self.device = device
+        #Learned image decoder
+        self.dec_name = dec_name
+        if self.dec_name == 'lic':
+            self.lic_dec = LICDec(self.img_input_dir,model_name=model_name, quality=self.qp, device=self.device)
+        else:
+            self.lic_dec = None
+
+    def vtm_yuv_decompress(self, frame_idx:int):
+        os.system("./image_codecs/vtm/decode.sh "+self.img_input_dir+'frame'+str(frame_idx))
+        bin_file=self.img_input_dir+'frame'+str(frame_idx)+'.bin'
+        bits=os.path.getsize(bin_file)*8
+
+        #  read the rec frame (yuv420) and convert to rgb444
+        rec_ref_yuv=yuv420_to_rgb444(self.img_input_dir+'frame'+str(frame_idx)+'_dec.yuv', self.width, self.height, 0, 1, False, False) 
+        img_rec = rec_ref_yuv[0]                   
+        return img_rec, bits                                    
+
+    def vtm_rgb_decompress(self, frame_idx:int):
+        os.system("./image_codecs/vtm/decode_rgb444.sh "+self.img_input_dir+'frame'+str(frame_idx))
+        bin_file=self.img_input_dir+'frame'+str(frame_idx)+'.bin'
+        bits=os.path.getsize(bin_file)*8
+
+        f_temp=open(self.img_input_dir+'frame'+str(frame_idx)+'_dec.rgb','rb')
+        img_rec=np.fromfile(f_temp,np.uint8,3*self.height*self.width).reshape((3,self.height,self.width))   # 3xHxW RGB            
+        return img_rec, bits
+    
+    def decompress(self, frame_idx:int):
+        frame_idx_str = str(frame_idx).zfill(4)
+        if self.dec_name == 'vtm':
+            if self.iframe_format == 'YUV420':
+                img_rec, bits = self.vtm_yuv_decompress(frame_idx_str)
+            elif self.iframe_format == 'RGB444':
+                img_rec, bits = self.vtm_rgb_decompress(frame_idx_str)
+            else:
+                raise NotImplementedError(f"Frame format '{self.iframe_format}' not implemented!")
+        else:
+            dec_info = self.lidec.decompress(frame_idx_str)
+            img_rec = dec_info['x_hat']
+            bits = dec_info['bits']
+        return img_rec, bits

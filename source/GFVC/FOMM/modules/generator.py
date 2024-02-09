@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from GFVC.FOMM.modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from GFVC.FOMM.modules.dense_motion import DenseMotionNetwork
+from GFVC.FOMM.modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
+
 
 
 class OcclusionAwareGenerator(nn.Module):

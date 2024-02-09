@@ -6,14 +6,14 @@ from GFVC.DAC.modules.util import Hourglass, AntiAliasInterpolation2d, \
                                     Mask, OutputLayer
 
 
-class DenseMotionNetwork(nn.Module):
+class DenseMotionGenerator(nn.Module):
     """
     Module that predicting a dense motion from sparse motion representation given by kp_reference and kp_target
     """
 
     def __init__(self, block_expansion=64, num_blocks=2, max_features=1024, num_kp=10, num_channels=3, estimate_occlusion_map=False,
                  scale_factor=1, kp_variance=0.01,norm='batch',qp=False, **kwargs):
-        super(DenseMotionNetwork, self).__init__()
+        super(DenseMotionGenerator, self).__init__()
         self.hourglass = Hourglass(block_expansion=block_expansion, in_features=(num_kp + 1) * (num_channels + 1),
                                    max_features=max_features, num_blocks=num_blocks)
 

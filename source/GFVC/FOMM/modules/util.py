@@ -1,8 +1,6 @@
-from torch import nn
-
-import torch.nn.functional as F
 import torch
-
+import torch.nn as nn
+import torch.nn.functional as F
 from GFVC.FOMM.sync_batchnorm import SynchronizedBatchNorm2d as BatchNorm2d
 
 

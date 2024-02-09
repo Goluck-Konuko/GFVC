@@ -4,7 +4,7 @@ from torchvision import transforms
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-
+from typing import Dict, List
 
 def abs(x):
     return torch.sqrt(x[:,:,:,:,0]**2+x[:,:,:,:,1]**2+1e-12)
@@ -212,6 +212,8 @@ def load_image_array(rgb_data,color_conv='709',def_bits=8, device='cpu'):
 def convert_and_round_plane(plane, cur_range, new_range, bits):
         return round_plane(convert_range(plane, cur_range, new_range), bits)
 
+def convertup_and_round_plane(plane, cur_range, new_range, bits):
+    return convert_range(plane, cur_range, new_range).mul((1 << bits) - 1).round()
 
 def round_plane(plane, bits):
         return plane.mul((1 << bits) - 1).round().div((1 << bits) - 1)
@@ -286,6 +288,41 @@ def color_conv_matrix(color_conv='709'):
         raise NotImplementedError
 
     return a, b, c, d, e
+
+
+def write_yuv(yuv: Dict[str, torch.Tensor], f: str, bits: int=8):
+    """
+    dump a yuv file to the provided path
+    @path: path to dump yuv to (file must exist)
+    @bits: bitdepth
+    @frame_idx: at which idx to write the frame (replace), -1 to append
+    """
+    nr_bytes = np.ceil(bits / 8)
+    if nr_bytes == 1:
+        data_type = np.uint8
+    elif nr_bytes == 2:
+        data_type = np.uint16
+    elif nr_bytes <= 4:
+        data_type = np.uint32
+    else:
+        raise NotImplementedError(
+            'Writing more than 16-bits is currently not supported!')
+
+    # rescale to range of bits
+    for plane in yuv:
+        yuv[plane] = convertup_and_round_plane(yuv[plane], data_range, data_range,bits).cpu().numpy()
+
+    # dump to file
+    lst = []
+    for plane in ['Y', 'U', 'V']:
+        if plane in yuv.keys():
+            lst = lst + yuv[plane].ravel().tolist()
+
+    raw = np.array(lst)
+
+    raw.astype(data_type).tofile(f)
+
+
 
 import yaml
 def read_config_file(config_path):

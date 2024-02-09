@@ -8,12 +8,21 @@ logs_slurm/*
 
 source/GFVC/*/checkpoint/*.pth.tar
 
-config/rdac+*
-source/RDAC+*
-source/GFVC/RDAC+
+config/rdac*
+source/rdac*
+source/RDAC*
+source/GFVC/RDAC*
 
 *cdac*
 source/CDAC*
 source/GFVC/CDAC
 
 results/
+
+evaluate/eval_utils/vmaf*
+evaluate/rdac_ablation*
+
+script*
+
+
+

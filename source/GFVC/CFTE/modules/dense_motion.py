@@ -20,7 +20,7 @@ class DenseMotionNetwork(nn.Module):
     Module that predicting a dense motion from sparse motion representation given by kp_source and kp_driving
     """
 
-    def __init__(self, block_expansion, num_blocks,num_down_blocks, max_features, num_kp, num_channels, num_bottleneck_blocks,
+    def __init__(self, block_expansion=64, num_blocks=4,num_down_blocks=4, max_features=512, num_kp=1, num_channels=3, num_bottleneck_blocks=4,
                  estimate_occlusion_map=False,scale_factor=1, kp_variance=0.01):
         
         super(DenseMotionNetwork, self).__init__()

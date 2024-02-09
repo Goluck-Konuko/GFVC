@@ -26,7 +26,7 @@ class GFVCDataHandler:
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
             bitrate_dir = self.bitrate_dir
             seqs = sorted([x for x in seqs if f"QP{qp}" in x], key= lambda x: x.split('_')[1])
-            br_files = [x for x in os.listdir(bitrate_dir) if f"_QP{qp}" in x]
+            br_files = [x for x in os.listdir(bitrate_dir) if f"_qp{qp}" in x]
             #read the evaluation data for each metric for all the sequences and compute averages
             qp_metrics = {}
             for m in self.metrics:
@@ -75,7 +75,7 @@ class RDACDataHandler(GFVCDataHandler):
         self.rate_idx = kwargs['rate_idx']
         self.data_dir = f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/evaluation"
         if self.codec in ['rdac','rdacp']:
-            self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit_RQP"
+            self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit_qqp"
         else:
             self.bitrate_dir =  f"experiment/{codec.upper()}/Iframe_{kwargs['iframe_format'].upper()}/resultBit"
         self.qps = kwargs['qps']
@@ -91,7 +91,7 @@ class RDACDataHandler(GFVCDataHandler):
             # for m in self.metrics:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
-            filter = f"QP4_RQP{qp}"
+            filter = f"qp4_qp{qp}"
             bitrate_dir = self.bitrate_dir+f"{qp}"
             seqs = sorted([x for x in seqs if filter in x], key= lambda x: x.split('_')[1])
             br_files = [x for x in os.listdir(bitrate_dir) if self.dataset_name in x]
@@ -156,7 +156,7 @@ class AnchorDataHandler(GFVCDataHandler):
             # for m in self.metrics:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
-            seqs = sorted([x for x in seqs if f"QP{qp}" in x], key= lambda x: x.split('_')[1])
+            seqs = sorted([x for x in seqs if f"qp{qp}" in x], key= lambda x: x.split('_')[1])
             # br_files = [x for x in os.listdir(bitrate_dir) if filter in x]
             #read the evaluation data for each metric for all the sequences and compute averages
             qp_metrics = {}

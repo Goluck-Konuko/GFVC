@@ -1,6 +1,6 @@
-from torch import nn
-import torch.nn.functional as F
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from GFVC.FOMM.modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, kp2gaussian
 
 

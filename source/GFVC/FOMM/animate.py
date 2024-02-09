@@ -2,14 +2,12 @@ import os
 from tqdm import tqdm
 
 import torch
+import imageio
+import numpy as np
+from scipy.spatial import ConvexHull
 from torch.utils.data import DataLoader
-
 from GFVC.FOMM.frames_dataset import PairedDataset
 from GFVC.FOMM.logger import Logger, Visualizer
-import imageio
-from scipy.spatial import ConvexHull
-import numpy as np
-
 from GFVC.FOMM.sync_batchnorm import DataParallelWithCallback
 
 

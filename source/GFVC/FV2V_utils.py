@@ -43,11 +43,7 @@ def make_FV2V_prediction(reference_frame, kp_reference, kp_current, generator, r
     return prediction
 
 
-def load_FV2V_checkpoints(config_path, checkpoint_path, cpu=False):
-    if cpu:
-        device = 'cpu'
-    else:
-        device = 'cuda'
+def load_fv2v_checkpoints(config_path, checkpoint_path, device='cpu'):
 
     with open(config_path) as f:
         #config = yaml.load(f)
@@ -66,9 +62,9 @@ def load_FV2V_checkpoints(config_path, checkpoint_path, cpu=False):
     he_estimator.to(device)        
     checkpoint = torch.load(checkpoint_path, map_location=device)
  
-    generator.load_state_dict(checkpoint['generator'],strict=False)
-    kp_detector.load_state_dict(checkpoint['kp_detector']) ####
-    he_estimator.load_state_dict(checkpoint['he_estimator'])
+    generator.load_state_dict(checkpoint['generator'],strict=True)
+    kp_detector.load_state_dict(checkpoint['kp_detector'], strict=True) ####
+    he_estimator.load_state_dict(checkpoint['he_estimator'], strict=True)
         
     if device=='cuda':
         generator = DataParallelWithCallback(generator)
