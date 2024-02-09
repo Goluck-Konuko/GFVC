@@ -17,7 +17,7 @@ source/GFVC/RDAC*
 source/CDAC*
 source/GFVC/CDAC
 
-results/
+# results/
 
 evaluate/eval_utils/vmaf*
 evaluate/rdac_ablation*
