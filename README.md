@@ -11,7 +11,9 @@ Current extensions to the original code include [DAC](https://ieeexplore.ieee.or
 + Download the `CFTE-checkpoint.pth.tar`, `FOMM-checkpoint.pth.tar`, and `FV2V-checkpoint.pth.tar` to the path `./GFVC/CFTE/checkpoint/`, `./GFVC/FOMM/checkpoint/`, and `./GFVC/FV2V/checkpoint/` respectively. The checkpoints for FOMM, CFTE and FV2V are available at [this link](https://portland-my.sharepoint.com/:u:/g/personal/bolinchen3-c_my_cityu_edu_hk/EZ3rHarhkzhMisnJDTM7XOYBIH0lVI2jrdOK_xn_mj-tVg?e=KHfCa0) while DAC and RDAC are available [here](https://drive.google.com/drive/folders/1rsGjf46VmRO1asFAsCkTFj9PWrhcd0Lo?usp=drive_link).
 
 + The overall testing dataset is available at [this link](https://portland-my.sharepoint.com/:f:/g/personal/bolinchen3-c_my_cityu_edu_hk/En0W90hNlrZLokuzGb67lgIBMqeHSIZZHff95ZyI0-WG7g?e=1cx4ZG).
++ Download [HEVC](https://drive.google.com/drive/folders/1CRXU1paiYxiuSZTAlmGBaXlJki0xNUub?usp=sharing) and [VVC](https://drive.google.com/drive/folders/112qD0774lsmfhyVdnqD4TEM2t-1WxUq_?usp=sharing) and place both codecs in ``source/anchors/`` directory.
 + The specific details can be seen in the subfolder `source`.
+
   
 # Sample Demos
 ## Demo: Similar Bitrate &&  Similar Quality

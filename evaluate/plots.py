@@ -105,7 +105,7 @@ class Plotter:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--codecs", default="fomm,fv2v,cfte,dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
     parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists,msVGG,vmaf", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
     parser.add_argument("--qps", default="32,35,38,42,45,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
     parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
