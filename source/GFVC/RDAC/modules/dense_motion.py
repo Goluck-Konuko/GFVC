@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from GFVC.DAC.modules.util import Hourglass, AntiAliasInterpolation2d, \
+from GFVC.RDAC.modules.util import Hourglass, AntiAliasInterpolation2d, \
                                     make_coordinate_grid, kp2gaussian,\
                                     Mask, OutputLayer
 

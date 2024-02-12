@@ -53,7 +53,6 @@ class GeneratorRDAC(nn.Module):
         self.sdc = ResidualCoder(num_channels,num_channels, N, M,**residual_coder_params)
         
         self.tdc = ResidualCoder(num_channels,num_channels, N, M,**residual_coder_params)
-        self.motion_compensation = kwargs['motion_compensation']
 
     def deform_input(self, inp, deformation):
         '''Motion compensation using bilinear interpolation'''
@@ -111,15 +110,7 @@ class GeneratorRDAC(nn.Module):
                             'kp_target': params['kp_target']}
 
         #then animate current frame with residual info from the current frame
-        def_ref_fts, dense_motion_params  = self.motion_prediction_and_compensation(**motion_pred_params)
-        if self.ref_fusion_net:
-            if 'prev_anim_fts' in params and np.random.rand()>0.1:
-                prev_anim_fts = params['prev_anim_fts']
-            else:
-                prev_anim_fts = torch.zeros_like(def_ref_fts)
-            #combine the two features
-            inp = torch.cat((def_ref_fts,prev_anim_fts), dim=1)
-            def_ref_fts = self.ref_fusion_net(inp)
+        def_ref_fts, _  = self.motion_prediction_and_compensation(**motion_pred_params)
 
         out_ft_maps = self.bottleneck(def_ref_fts) #input the weighted average 
         
@@ -133,7 +124,6 @@ class GeneratorRDAC(nn.Module):
         #then we can use it as additional information to minimize the entropy of current frame
         if 'res_hat_prev' in params:
             residual_temp = (residual-params[f"res_hat_prev"])/2.0
-            # output_dict['res_temp'] = residual_temp
             res_hat_temp, bpp, prob = self.tdc(residual_temp,rate_idx = params['rate_idx'])
             
             output_dict['res_temp_hat'] = res_hat_temp
@@ -165,38 +155,13 @@ class GeneratorRDAC(nn.Module):
                     'rate_idx': kwargs[f'rate_idx']}
             if idx>0:
                 res_hat_prev = output_dict[f'res_hat_{idx-1}'] #.detach().clone()
-                if self.motion_compensation:
-                    prev_rec = output_dict[f'enhanced_prediction_{idx-1}'] #.detach().clone()
-                    #create motion compensation params for residual
-                    m_comp_params = {'prev_rec': prev_rec,
-                                     'kp_cur':kwargs[f'kp_target_{idx}'],
-                                     'kp_prev':kwargs[f'kp_target_{idx-1}'],
-                                     'res_hat_prev': res_hat_prev
-                                     }
-                    params.update({'res_hat_prev': self.deform_residual(m_comp_params)})
-                else:
-                    #use residual without motion compensation
-                    params.update({'res_hat_prev': res_hat_prev})
+                params.update({'res_hat_prev': res_hat_prev})
                 
-                if self.temporal_animation:
-                    #get the features of the previously animated frame and detach it from the computational graph
-                    prev_anim_fts = self.reference_ft_encoder(output_dict[f'enhanced_prediction_{idx-1}'].detach().clone())
-
-                    prev_motion_pred_params = { 
-                            'reference_frame':output_dict[f'enhanced_prediction_{idx-1}'],
-                            'reference_frame_features': prev_anim_fts,
-                            'kp_reference': kwargs[f'kp_target_{idx-1}'],
-                            'kp_target': params['kp_target']}
-
-                    #then animate current frame with residual info from the current frame
-                    prev_anim_fts, _  = self.motion_prediction_and_compensation(**prev_motion_pred_params)
-                    params.update({'prev_anim_fts': prev_anim_fts})
-
             output = self.animate_training(params)
             output_dict = self.update(output_dict, output, idx)
         return output_dict
 
-    def animate(self, reference_frame, kp_reference,kp_target):     
+    def animate(self, reference_frame, kp_reference, kp_target):     
         # Encoding (downsampling) part      
         ref_fts = self.reference_ft_encoder(reference_frame)
         
@@ -208,7 +173,7 @@ class GeneratorRDAC(nn.Module):
                     'kp_reference':kp_reference,
                     'kp_target':kp_target
                 }
-        def_ref_fts, dense_motion_params = self.motion_prediction_and_compensation(**motion_pred_params)
+        def_ref_fts, _= self.motion_prediction_and_compensation(**motion_pred_params)
 
         out_ft_maps = self.bottleneck(def_ref_fts) #input the weighted average 
         #reconstruct the animated frame

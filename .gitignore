@@ -1,5 +1,5 @@
 dataset/*
-experiment/*
+experiment*
 slurm/*
 logs_slurm/*
 
@@ -8,10 +8,9 @@ logs_slurm/*
 
 source/GFVC/*/checkpoint/*.pth.tar
 
-config/rdac*
-source/rdac*
-source/RDAC*
-source/GFVC/RDAC*
+config/rdacp*
+source/RDACP*
+source/GFVC/RDACP*
 
 *cdac*
 source/CDAC*

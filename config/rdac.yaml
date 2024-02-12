@@ -3,9 +3,9 @@ codec_name: 'RDAC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choos
 #dataset params 
 sequence_dir: '../dataset/'  ###You should download the testing sequence and modify the dir.
 seq_list: ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015'] #
-dataset: 'CFVQA'  ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
+dataset: 'CFVQA'   ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
 num_frames: 125 # 125  frames for 'CFVQA'
-
+gop_size: 64
 
 #video params   
 height: 256
@@ -14,19 +14,19 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 
 #codec params   
-inference_mode: 'Encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: [4]  #[ "22", "32", "42", "52"]  #<- VTM #["6","5","4","3","2"] # <-LIC
-quantization_factor: 256 #64 #Number of bins for KP coding
-adaptive_metric: "LPIPS" #The metric used to select and store reference frames [PSNR, MS_SSIM,FSIM, LPIPS, DISTS]
-adaptive_thresh: 0.5 #Threshold value (depends on the metric)
+inference_mode: 'encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+qp_list: [ "22", "32", "42", "52"]  #<- VTM #["6","5","4","3","2"] # <-LIC
+quantization_factor: 128 #64 #Number of bins for KP coding
+adaptive_metric: "PSNR" #The metric used to select and store reference frames [PSNR, MS_SSIM,FSIM, LPIPS, DISTS]
+adaptive_thresh: 20 #Threshold value (depends on the metric)
 
-#evaluation params
-metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim']
 
 # => RDAC
 residual_coding_params: #Parameters for coding the frame residuals
-  gop_size: 32 #Max number of frames to animate from a single reference
-  rate_idx: 0 #The residual coding rd point
+  rate_idx: 3 #The residual coding rd point
   int_value: 0.0 #Used for interpolation between RD points i.e. the RDAC model is trained 
                   #with 1-6 discrete RD points but we can get intermediate RD points
                   #such as 2.3 at inference time through rate_idx=2, int_value=0.3
+
+#evaluation params
+metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim','msVGG','vmaf']

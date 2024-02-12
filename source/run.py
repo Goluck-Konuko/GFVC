@@ -43,17 +43,20 @@ if __name__ == "__main__":
     ## 'YUV420'  OR 'RGB444' ###You need to define what color format to use for encoding the first frame.
     iframe_format=args['iframe_format']  
 
-
-
     for qp in qplist:
         for seq in tqdm(seqlist):
             original_seq=Sequence_dir+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb'
             cmd = "./run.sh "+model_name+" "+coding_mode+" "+original_seq+" "+str(frames)+" "+str(quantization_factor)+" "+str(qp)+" "+str(iframe_format)
-            if model_name in ['DAC']:
+            if model_name in ['DAC','RDAC','RDACP']:
                 cmd += " " + args['adaptive_metric'] + " " + str(args['adaptive_thresh'])
+            if model_name in ['RDAC','RDACP']:
+                cmd += " " + str(args['residual_coding_params']['rate_idx']) + " " + str(args['residual_coding_params']['int_value'])
+            if model_name in ['RDACP']:
+                cmd += " " + str(args['residual_coding_params']['kp_deform']) + " " + str(args['residual_coding_params']['bm_deform'])
+            
             cmd += " "+str(gop_size)
             os.system(cmd)  
-            print(model_name+"_"+coding_mode+"_"+seq+"_"+qp+" Finished")
-            #break 
-        #break
+            print(model_name+"_"+coding_mode+"_"+seq+"_"+str(qp)+" Finished")
+            # break 
+        # break
             

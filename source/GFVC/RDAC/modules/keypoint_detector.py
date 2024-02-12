@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from GFVC.DAC.modules.util import Hourglass,KP_Output, make_coordinate_grid, AntiAliasInterpolation2d
+from GFVC.RDAC.modules.util import Hourglass,KP_Output, make_coordinate_grid, AntiAliasInterpolation2d
 
-class KPDetector(nn.Module):
+class KPD(nn.Module):
     """
     Detecting a keypoints. Returns keypoint position and jacobian near each keypoint.
     """
     def __init__(self, block_expansion=64, num_kp=10, num_channels=3, max_features=512,
                  num_blocks=3, temperature=0.1, estimate_jacobian=False, scale_factor=1,
                  pad=3, **kwargs):
-        super(KPDetector, self).__init__()
+        super(KPD, self).__init__()
 
         self.predictor = Hourglass(block_expansion, in_features=num_channels,
                                    max_features=max_features, num_blocks=num_blocks)

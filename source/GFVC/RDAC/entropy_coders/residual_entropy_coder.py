@@ -63,7 +63,6 @@ class ResEntropyCoder:
         #output info
         self.res_output_dir = out_path
         self.q_step = q_step
-        self.metadata = []
 
     def mid_rise_quantizer(self, arr,levels=256):
         arr = np.array(arr)
@@ -257,8 +256,8 @@ class ResEntropyCoder:
             f.write("".join(str(res_frame_list).split()))  
         return res_frame_list
 
-    def encode_metadata(self)->None:
-        data = copy(self.metadata)
+    def encode_metadata(self, metadata: List[int])->None:
+        data = copy(metadata)
         bin_file=self.res_output_dir+'/metadata.bin'
         final_encoder_expgolomb(data,bin_file)     
         bits=os.path.getsize(bin_file)*8
@@ -371,7 +370,7 @@ class ResEntropyDecoder(BasicEntropyCoder):
         # Logic for order = -1
         return dec.read(model.order_minus1_freqs)
 
-    def read_metadata(self)->None:
+    def load_metadata(self)->None:
         bin_file=self.res_output_dir+'metadata.bin'
         dec_metadata = final_decoder_expgolomb(bin_file)
         metadata = data_convert_inverse_expgolomb(dec_metadata)   
