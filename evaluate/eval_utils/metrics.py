@@ -436,8 +436,7 @@ class AntiAliasInterpolation2d(nn.Module):
             [
                 torch.arange(size, dtype=torch.float32)
                 for size in kernel_size
-                ]
-        )
+                ], indexing='ij')
         for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
             mean = (size - 1) / 2
             kernel *= torch.exp(-(mgrid - mean) ** 2 / (2 * std ** 2))
