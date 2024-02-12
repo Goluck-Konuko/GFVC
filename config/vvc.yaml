@@ -19,5 +19,5 @@ qp_list: ["32","35","38","42","45","51"] #
 quantization_factor: 64 #Number of bins for KP coding
 
 #evaluation params
-metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim']
+metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim','msVGG','vmaf']
 
