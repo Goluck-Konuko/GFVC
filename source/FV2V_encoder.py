@@ -22,6 +22,7 @@ class FV2VKPEncoder:
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
         self.rec_sem = []
+        self.ref_frame_idx = []
 
     def get_kp_list(self, kp_frame: Dict[str,torch.Tensor], frame_idx:int)->List[str]:
 
@@ -93,9 +94,9 @@ class FV2VKPEncoder:
         self.rec_sem.append(rec_semantics)
         return rec_semantics, bits
     
-    def encode_metadata(self, metadata: List[int])->None:
+    def encode_metadata(self)->None:
         '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
+        data = copy(self.ref_frame_idx)
         bin_file=self.kp_output_dir+'/metadata.bin'
         final_encoder_expgolomb(data,bin_file)     
 
@@ -188,9 +189,8 @@ if __name__ == "__main__":
             head_pose_info = enc_main.estimator_model(reference)
             kp_list_frame = kp_coder.get_kp_list(head_pose_info, frame_idx)
             kp_coder.rec_sem.append(kp_list_frame)
-
-
-
+            kp_coder.ref_frame_idx.append(frame_idx) #metadata for reference frame indices
+        
         else:
 
             inter_frame = cv2.merge(current_frame)       
@@ -205,7 +205,8 @@ if __name__ == "__main__":
             kp_list_frame = kp_coder.get_kp_list(head_pose_info, frame_idx)
             rec_head_pose_info, kp_bits = kp_coder.encode_kp(kp_list_frame, frame_idx) 
             sum_bits += kp_bits
-            
+    
+    sum_bits+= kp_coder.encode_metadata()       
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   
 

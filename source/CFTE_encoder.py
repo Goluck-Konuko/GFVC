@@ -24,6 +24,7 @@ class CFTEncoder:
         self.q_step = q_step
         self.device = device
         self.rec_sem = []
+        self.ref_frame_idx = []
 
     def get_kp_list(self, kp_frame: Dict[str,torch.Tensor], frame_idx:int)->List[str]:
         kp_value = kp_frame['value']
@@ -70,9 +71,9 @@ class CFTEncoder:
         #reconstruct the KPs 
         return kp_inter_frame, bits
     
-    def encode_metadata(self, metadata: List[int])->None:
+    def encode_metadata(self)->None:
         '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
+        data = copy(self.ref_frame_idx)
         bin_file=self.kp_output_dir+'/metadata.bin'
         final_encoder_expgolomb(data,bin_file)     
 
@@ -169,6 +170,8 @@ if __name__ == "__main__":
                 kp_value_frame = kp_coder.get_kp_list(kp_reference, frame_idx)
                 #append to list for use in predictively coding the next frame KPs
                 kp_coder.rec_sem.append(kp_value_frame)
+                kp_coder.ref_frame_idx.append(frame_idx) #metadata for reference frame indices
+                
                 #update enc main with reference frame info
                 enc_main.reference_frame = reference
                 enc_main.kp_reference = kp_reference
@@ -186,54 +189,7 @@ if __name__ == "__main__":
                 rec_kp_frame, kp_bits = kp_coder.encode_kp(kp_frame, frame_idx)
                 sum_bits += kp_bits  
 
-
-
-
-    # rec_sem=[]
-    # for frame in range(1,frames):
-    #     frame_idx = str(frame).zfill(4)
-    #     if frame==1:
-    #         rec_sem.append(seq_kp_integer[0])
-
-    #         ### residual
-    #         kp_difference=(np.array(seq_kp_integer[frame])-np.array(seq_kp_integer[frame-1])).tolist()
-    #         ## quantization
-    #         kp_difference=[i*Qstep for i in kp_difference]
-    #         kp_difference= list(map(round, kp_difference[:]))
-    #         frame_idx = str(frame).zfill(4)
-    #         bin_file=driving_kp+'/frame'+str(frame_idx)+'.bin'
-    #         final_encoder_expgolomb(kp_difference,bin_file)     
-    #         bits=os.path.getsize(bin_file)*8
-    #         sum_bits += bits          
-    #         #### decoding for residual
-    #         res_dec = final_decoder_expgolomb(bin_file)
-    #         res_difference_dec = data_convert_inverse_expgolomb(res_dec)   
-    #         ### (i)_th frame + (i+1-i)_th residual =(i+1)_th frame
-    #         res_difference_dec=[i/Qstep for i in res_difference_dec]
-    #         rec_semantics=(np.array(res_difference_dec)+np.array(rec_sem[frame-1])).tolist()
-    #         rec_sem.append(rec_semantics)
-
-    #     else:
-
-    #         ### residual
-    #         kp_difference=(np.array(seq_kp_integer[frame])-np.array(rec_sem[frame-1])).tolist()
-    #         ## quantization
-    #         kp_difference=[i*Qstep for i in kp_difference]
-    #         kp_difference= list(map(round, kp_difference[:]))
-    #         frame_idx = str(frame).zfill(4)
-    #         bin_file=driving_kp+'/frame'+str(frame_idx)+'.bin'
-    #         final_encoder_expgolomb(kp_difference,bin_file)     
-    #         bits=os.path.getsize(bin_file)*8
-    #         sum_bits += bits          
-
-    #         #### decoding for residual
-    #         res_dec = final_decoder_expgolomb(bin_file)
-    #         res_difference_dec = data_convert_inverse_expgolomb(res_dec)   
-    #         ### (i)_th frame + (i+1-i)_th residual =(i+1)_th frame
-    #         res_difference_dec=[i/Qstep for i in res_difference_dec]
-    #         rec_semantics=(np.array(res_difference_dec)+np.array(rec_sem[frame-1])).tolist()
-    #         rec_sem.append(rec_semantics)
-
+    sum_bits+= kp_coder.encode_metadata()
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   
 

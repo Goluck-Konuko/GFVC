@@ -22,6 +22,7 @@ class CFTDecoder:
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
         self.rec_sem = []
+        self.ref_frame_idx = []
 
     def get_kp_list(self, kp_frame: Dict[str,torch.Tensor], frame_idx:int)->List[str]:
 
@@ -58,15 +59,12 @@ class CFTDecoder:
         cf_inter_frame['value']=cf_current_value  
         return cf_inter_frame, bits
     
-    def decode_metadata(self, metadata: List[int])->None:
-        '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
-        bin_file=self.kp_output_dir+'/metadata.bin'
-        final_encoder_expgolomb(data,bin_file)     
-
-        bits=os.path.getsize(bin_file)*8
-        return bits
-
+    def load_metadata(self)->None:
+        bin_file=self.kp_output_dir+'metadata.bin'
+        dec_metadata = final_decoder_expgolomb(bin_file)
+        metadata = data_convert_inverse_expgolomb(dec_metadata)   
+        self.ref_frame_idx = [int(i) for i in metadata]
+        return os.path.getsize(bin_file)*8
 
 
 class CFTE:
@@ -114,12 +112,8 @@ if __name__ == "__main__":
     gop_size = opt.gop_size
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
     device = opt.device
-    if device =='cuda' and torch.cuda.is_available():
-        cpu = False
-    else:
-        cpu = True
+    if not torch.cuda.is_available():
         device = 'cpu'
-
     ## CFTE
     model_name = 'CFTE' 
     model_config_path='./GFVC/CFTE/checkpoint/CFTE-256.yaml'
@@ -153,14 +147,14 @@ if __name__ == "__main__":
 
     # Keypoint Decoder
     kp_decoder = CFTDecoder(cf_input_path,q_step)
-
+    sum_bits += kp_decoder.load_metadata()
     #Reconstruction models
     dec_main = CFTE(model_config_path, model_checkpoint_path,device=device)
     
     output_video = []
     with torch.no_grad():
         for frame_idx in tqdm(range(0, frames)):            
-            if frame_idx%gop_size == 0:      # I-frame                      
+            if frame_idx in kp_decoder.ref_frame_idx:      # I-frame                      
                 img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
                 sum_bits+= ref_bits
                 #convert and save the decoded reference frame
@@ -180,47 +174,6 @@ if __name__ == "__main__":
                 #KPs used for relative decoding of inter_Frame KPs
                 kp_value_frame = kp_decoder.get_kp_list(kp_reference, frame_idx)
                 kp_decoder.rec_sem.append(kp_value_frame)
-
-
-                # if Iframe_format=='YUV420':
-                #     os.system("./image_codecs/vtm/decode.sh "+dir_enc+'frame'+frame_idx_str)
-                #     bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
-                #     bits=os.path.getsize(bin_file)*8
-                #     sum_bits += bits
-
-                #     #  read the rec frame (yuv420) and convert to rgb444
-                #     rec_ref_yuv=yuv420_to_rgb444(dir_enc+'frame'+frame_idx_str+'_dec.yuv', width, height, 0, 1, False, False) 
-                #     img_rec = rec_ref_yuv[frame_idx]
-                #     img_rec = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
-                #     img_rec.tofile(f_dec)                         
-                #     img_rec = resize(img_rec, (3, height, width))    # normlize to 0-1                                      
-
-                # elif Iframe_format=='RGB444':
-                #     os.system("./image_codecs/vtm/decode_rgb444.sh "+dir_enc+'frame'+frame_idx_str)
-                #     bin_file=dir_enc+'frame'+frame_idx_str+'.bin'
-                #     bits=os.path.getsize(bin_file)*8
-                #     sum_bits += bits
-
-                #     f_temp=open(dir_enc+'frame'+frame_idx_str+'_dec.rgb','rb')
-                #     img_rec=np.fromfile(f_temp,np.uint8,3*height*width).reshape((3,height,width))   # 3xHxW RGB         
-                #     img_rec.tofile(f_dec) 
-                #     img_rec = resize(img_rec, (3, height, width))    # normlize to 0-1                                      
-
-                # with torch.no_grad(): 
-                #     reference = torch.tensor(img_rec[np.newaxis].astype(np.float32))
-                #     reference = reference.to(device)    # require GPU
-                #     kp_reference = CFTE_Analysis_Model(reference) ################
-
-                #     kp_value = kp_reference['value']
-                #     kp_value_list = kp_value.tolist()
-                #     kp_value_list = str(kp_value_list)
-                #     kp_value_list = "".join(kp_value_list.split())
-
-                #     kp_value_frame=json.loads(kp_value_list)
-                #     kp_value_frame= eval('[%s]'%repr(kp_value_frame).replace('[', '').replace(']', ''))
-                #     seq_kp_integer.append(kp_value_frame)      
-
-
             else:
                 # Decoding motion features
                 dec_kp_inter_frame, kp_bits = kp_decoder.decode_kp(frame_idx)

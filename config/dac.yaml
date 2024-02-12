@@ -3,9 +3,9 @@ codec_name: 'DAC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choose
 #dataset params 
 sequence_dir: '../dataset/'  ###You should download the testing sequence and modify the dir.
 seq_list: ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015']
-dataset: 'VOXCELEB'   ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
+dataset: 'VOXCELEB' ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
 num_frames: 250 # 125  frames for 'CFVQA'
-gop_size: 250
+gop_size: 64
 
 #video params   
 height: 256

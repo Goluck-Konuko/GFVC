@@ -103,14 +103,12 @@ class FV2VKPDecoder:
 
         return kp_current, bits
     
-    def decode_metadata(self, metadata: List[int])->None:
-        '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
-        bin_file=self.kp_output_dir+'/metadata.bin'
-        final_encoder_expgolomb(data,bin_file)     
-
-        bits=os.path.getsize(bin_file)*8
-        return bits
+    def load_metadata(self)->None:
+        bin_file=self.kp_output_dir+'metadata.bin'
+        dec_metadata = final_decoder_expgolomb(bin_file)
+        metadata = data_convert_inverse_expgolomb(dec_metadata)   
+        self.ref_frame_idx = [int(i) for i in metadata]
+        return os.path.getsize(bin_file)*8
  
 class FV2V:
     '''Wrapper for models and forward methods'''
@@ -196,7 +194,7 @@ if __name__ == "__main__":
 
     #KP decoder
     kp_decoder = FV2VKPDecoder(kp_input_path, q_step=q_step, device=device)
-
+    sum_bits += kp_decoder.load_metadata()
     model_config_path=f'./GFVC/{model_name}/checkpoint/{model_name}-256.yaml'
     model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'         
     dec_main = FV2V(model_config_path, model_checkpoint_path, device=device)
@@ -204,7 +202,7 @@ if __name__ == "__main__":
     output_video = []
     with torch.no_grad():
         for frame_idx in tqdm(range(frames)):            
-            if frame_idx%opt.gop_size==0:      # I-frame  
+            if frame_idx in kp_decoder.ref_frame_idx:      # I-frame  
                 img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
                 sum_bits+= ref_bits
                 #convert and save the decoded reference frame

@@ -20,6 +20,7 @@ class DACKPDecoder:
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
         self.rec_sem = []
+        self.ref_frame_idx = []
 
     def get_kp_list(self, kp_frame: Dict[str,torch.Tensor], frame_idx:int)->List[str]:
 
@@ -55,14 +56,12 @@ class DACKPDecoder:
         kp_inter_frame['value']=kp_current_value  
         return kp_inter_frame, bits
     
-    def decode_metadata(self, metadata: List[int])->None:
-        '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
-        bin_file=self.kp_output_dir+'/metadata.bin'
-        final_encoder_expgolomb(data,bin_file)     
-
-        bits=os.path.getsize(bin_file)*8
-        return bits
+    def load_metadata(self)->None:
+        bin_file=self.kp_output_dir+'metadata.bin'
+        dec_metadata = final_decoder_expgolomb(bin_file)
+        metadata = data_convert_inverse_expgolomb(dec_metadata)   
+        self.ref_frame_idx = [int(i) for i in metadata]
+        return os.path.getsize(bin_file)*8
   
 class DAC:
     '''DAC Decoder models'''
@@ -107,12 +106,9 @@ if __name__ == "__main__":
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
     device = opt.device
     gop_size = opt.gop_size
-    if device =='cuda' and torch.cuda.is_available():
-        cpu = False
-    else:
-        cpu = True
+    if not torch.cuda.is_available():
         device = 'cpu'
-    
+        
     ## FOM
     model_name = "DAC"
 
@@ -150,6 +146,7 @@ if __name__ == "__main__":
 
     # Keypoint Decoder
     kp_decoder = DACKPDecoder(kp_input_path,q_step)
+    sum_bits += kp_decoder.load_metadata()
 
     #Reconstruction models
     dec_main = DAC(model_config_path, model_checkpoint_path,device=device)
@@ -157,7 +154,7 @@ if __name__ == "__main__":
     output_video = [] #Output an mp4 video for sanity check
     with torch.no_grad():
         for frame_idx in tqdm(range(0, frames)):            
-            if frame_idx%gop_size == 0:      # I-frame                      
+            if frame_idx in kp_decoder.ref_frame_idx:      # I-frame                      
                 img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
                 sum_bits+= ref_bits
                 #convert and save the decoded reference frame

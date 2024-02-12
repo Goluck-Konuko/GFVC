@@ -9,7 +9,6 @@ from typing import Protocol
 
 
 def raw_reader_planar(FileName, ImgWidth, ImgHeight, NumFramesToBeComputed):
-    
     f   = open(FileName, 'rb')
     frames  = NumFramesToBeComputed
     width   = ImgWidth

@@ -18,6 +18,7 @@ class DACKPEncoder:
         self.q_step = q_step
         self.device = device
         self.rec_sem = []
+        self.ref_frame_idx = []
 
     def get_kp_list(self, kp_frame: Dict[str,torch.Tensor], frame_idx:int)->List[str]:
         kp_value = kp_frame['value']
@@ -64,9 +65,9 @@ class DACKPEncoder:
         #reconstruct the KPs 
         return kp_inter_frame, bits
     
-    def encode_metadata(self, metadata: List[int])->None:
+    def encode_metadata(self)->None:
         '''this can be optimized to use run-length encoding which would be more efficient'''
-        data = copy(metadata)
+        data = copy(self.ref_frame_idx)
         bin_file=self.kp_output_dir+'/metadata.bin'
         final_encoder_expgolomb(data,bin_file)     
 
@@ -95,7 +96,7 @@ class DAC:
         prediction = self.synthesis_model.animate(self.reference_frame,self.kp_reference, kp_inter_frame)
         return prediction
     
-    def evaluate(self,kp_inter_frame: Dict[str,torch.Tensor], frame_idx:int)->tuple:
+    def evaluate(self,inter_frame, kp_inter_frame: Dict[str,torch.Tensor], frame_idx:int)->tuple:
         prediction = self.predict_inter_frame(kp_inter_frame)
         #evaluate the quality of the current prediction 
         pred_quality = self.metric.calc(inter_frame,prediction)
@@ -199,6 +200,8 @@ if __name__ == "__main__":
                 kp_value_frame = kp_coder.get_kp_list(kp_reference, frame_idx)
                 #append to list for use in predictively coding the next frame KPs
                 kp_coder.rec_sem.append(kp_value_frame)
+                kp_coder.ref_frame_idx.append(frame_idx) #metadata for reference frame indices
+                
                 #update enc main with reference frame info
                 enc_main.reference_frame = reference
                 enc_main.kp_reference = kp_reference
@@ -216,7 +219,7 @@ if __name__ == "__main__":
                 rec_kp_frame, kp_bits = kp_coder.encode_kp(kp_frame, frame_idx)
 
                 #Reconstruct the frame and evaluate quality
-                pred, encode_kp = enc_main.evaluate(rec_kp_frame, frame_idx)
+                pred, encode_kp = enc_main.evaluate(inter_frame, rec_kp_frame, frame_idx)
                 if encode_kp:
                     sum_bits += kp_bits
                 else:
@@ -233,10 +236,12 @@ if __name__ == "__main__":
                     kp_value_frame = kp_coder.get_kp_list(kp_reference, frame_idx)
                     #append to list for use in predictively coding the next frame KPs
                     kp_coder.rec_sem.append(kp_value_frame) #NOTE: The KP reconstructed above before the evaluation was also added to the rec_sem buffer!
+                    kp_coder.ref_frame_idx.append(frame_idx) #metadata for reference frame indices
+                
                     #update enc main with reference frame info
                     enc_main.reference_frame = reference
                     enc_main.kp_reference = kp_reference
-
+    sum_bits+= kp_coder.encode_metadata()
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   
 
