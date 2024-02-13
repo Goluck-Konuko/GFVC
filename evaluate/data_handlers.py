@@ -25,7 +25,7 @@ class GFVCDataHandler:
             #some sorting here to separate the sequences
             seqs = [x for x in os.listdir(self.data_dir) if self.dataset_name in x]
             bitrate_dir = self.bitrate_dir
-            seqs = sorted([x for x in seqs if f"QP{qp}" in x], key= lambda x: x.split('_')[1])
+            seqs = sorted([x for x in seqs if f"qp{qp}" in x], key= lambda x: x.split('_')[1])
             br_files = [x for x in os.listdir(bitrate_dir) if f"_qp{qp}" in x]
             #read the evaluation data for each metric for all the sequences and compute averages
             qp_metrics = {}

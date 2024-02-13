@@ -101,14 +101,14 @@ class Plotter:
             plt.savefig(f"{output_path}/{metric}.png", bbox_inches='tight')
             plt.close()
         
-# fomm,cfte,dac,hevc,vvc
+# fomm,fv2v,cfte,dac,
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="fomm,fv2v,cfte,dac", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--codecs", default="fomm,fv2v,cfte,dac,hevc,vvc", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
     parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists,msVGG,vmaf", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
     parser.add_argument("--qps", default="32,35,38,42,45,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
-    parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
+    parser.add_argument('--dataset_name', default='cfvqa', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
     parser.add_argument('--format', default="yuv420", type=str, help="Format for compressing the reference frame [yuv420 | rgb444]")
     parser.add_argument('--rate_idx', default=1, type=int, help="RD index for RDAC residual coding")
     
@@ -117,11 +117,15 @@ if __name__ == "__main__":
 
     codec_params = {'metrics':args.metrics, 'iframe_format':args.format, 'dataset_name': args.dataset_name.upper(), 'rate_idx':args.rate_idx}
     for codec in args.codecs:
-        if codec in ['fv2v','cfte','fomm','dac']:
+        if codec in ['fv2v','cfte','fomm']:
             #Reference frame QP values
             qp_list = ['22',"32","42",'52']
-        elif codec in ['hevc']:
-            qp_list = ["35","38","42","45","51"]
+        elif codec in ['dac']:
+            qp_list = ['22',"32","42"]
+        elif codec == 'vvc':
+            qp_list = ["32","35","38","42","45","51"]
+        elif codec == 'hevc':
+            qp_list = ["32","35","38","42","45","51"]
         elif codec in ['rdac','rdacp']:
             # RD index for residual coding
             qp_list = [0,1,2,3]
@@ -139,7 +143,7 @@ if __name__ == "__main__":
         codec_data[codec] = data_handler(codec, **codec_params)
 
     ## Generate Plots
-    output_path = f"experiment/plots/{args.dataset_name.upper()}"
+    output_path = f"experiment/PLOTS/{args.dataset_name.upper()}"
     plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
     plotter.plot_temporal_comparison(codec_data)
     plotter.plot_rd_comparison(codec_data)

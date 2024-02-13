@@ -82,7 +82,7 @@ if __name__ == "__main__":
             org_seq = raw_reader_planar(f_org_path,width,height,frames)
             
             if Model in ['HEVC','VVC']:
-                f_test_path = './experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'.rgb'
+                f_test_path = './experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb'
             else:
                 f_test_path = './experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'.rgb'
             dec_seq = raw_reader_planar(f_test_path,width,height,frames)
