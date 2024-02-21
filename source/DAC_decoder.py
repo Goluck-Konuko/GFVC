@@ -89,6 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--quantization_factor", default=4, type=int, help="the quantization factor for the residual conversion from float-type to int-type")
     parser.add_argument("--iframe_qp", default=42, help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
+    parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame coder [vtm | lic]")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=30, type=float,help="Reference selection threshold")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
@@ -106,6 +107,8 @@ if __name__ == "__main__":
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
     device = opt.device
     gop_size = opt.gop_size
+    thresh = int(opt.adaptive_thresh)
+
     if not torch.cuda.is_available():
         device = 'cpu'
         
@@ -118,15 +121,15 @@ if __name__ == "__main__":
     
 ###################################################
 
-    kp_input_path =model_dirname+'/kp/'+seq+'_qp'+str(qp)+'/'   
+    kp_input_path =model_dirname+'/kp/'+seq+'_qp'+str(qp)+'_th'+str(thresh)+'/'   
 
-    ref_input_path =model_dirname+'/enc/'+seq+'_qp'+str(qp)+'/'
+    ref_input_path =model_dirname+'/enc/'+seq+'_qp'+str(qp)+'_th'+str(thresh)+'/'
     os.makedirs(ref_input_path,exist_ok=True)     # the frames to be compressed by vtm    
 
     dec_output_path = model_dirname+'/dec/'
     os.makedirs(dec_output_path,exist_ok=True)     # the real decoded video  
-    dec_sequence_path_rgb  =dec_output_path+seq+'_qp'+str(qp)+'.rgb'
-    dec_sequence_path_mp4 =dec_output_path+seq+'_qp'+str(qp)+'.mp4'
+    dec_sequence_path_rgb  =dec_output_path+seq+'_qp'+str(qp)+'_th'+str(thresh)+'.rgb'
+    dec_sequence_path_mp4 =dec_output_path+seq+'_qp'+str(qp)+'_th'+str(thresh)+'.mp4'
 
 
     dir_bit=model_dirname+'/resultBit/'
@@ -142,12 +145,11 @@ if __name__ == "__main__":
     sum_bits = 0
 
     #Reference Image Decoder
-    ref_decoder = RefereceImageDecoder(ref_input_path,qp)
+    ref_decoder = RefereceImageDecoder(ref_input_path,int(qp),dec_name=opt.ref_codec)
 
     # Keypoint Decoder
     kp_decoder = DACKPDecoder(kp_input_path,q_step)
     sum_bits += kp_decoder.load_metadata()
-
     #Reconstruction models
     dec_main = DAC(model_config_path, model_checkpoint_path,device=device)
     
@@ -158,12 +160,18 @@ if __name__ == "__main__":
                 img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
                 sum_bits+= ref_bits
                 #convert and save the decoded reference frame
-                output_video.append(img_rec[:,:,::-1])
-                img_rec_out = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
+                if isinstance(img_rec, np.ndarray):
+                    output_video.append(img_rec[:,:,::-1])
+                    img_rec_out = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
+                    reference = frame2tensor(img_rec_out)
+                else:
+                    img_rec_out = tensor2frame(img_rec)
+                    output_video.append(np.transpose(img_rec_out, [1,2,0]))
+                    reference = img_rec
+                
                 img_rec_out.tofile(f_dec)
                 
-                
-                reference = frame2tensor(img_rec_out).to(device) #resize(img_rec, (3, height, width))    # normalize to 0-1  
+                reference = reference.to(device) #resize(img_rec, (3, height, width))    # normalize to 0-1  
                 kp_reference = dec_main.analysis_model(reference) 
 
                 #update decoder with the reference frame info
@@ -173,8 +181,8 @@ if __name__ == "__main__":
                 #append to list for use in predictively coding the next frame KPs
                 #KPs used for relative decoding of inter_Frame KPs
                 kp_value_frame = kp_decoder.get_kp_list(kp_reference, frame_idx)
+                kp_decoder.rec_sem = []
                 kp_decoder.rec_sem.append(kp_value_frame)
-
             else:
                 # Decoding motion features
                 dec_kp_inter_frame, kp_bits = kp_decoder.decode_kp(frame_idx)
@@ -194,6 +202,7 @@ if __name__ == "__main__":
 
     f_dec.close()     
     end=time.time()
+    print(len(output_video))
     imageio.mimsave(dec_sequence_path_mp4,output_video, fps=25.0)
     print(seq+'_qp'+str(qp)+'.rgb',"success. Total time is %.4fs. Model inference time is %.4fs. Total bits are %d" %(end-start,gene_time,sum_bits))
     
@@ -202,6 +211,6 @@ if __name__ == "__main__":
     totalResult[0][1]=end-start   
     totalResult[0][2]=gene_time   
     
-    np.savetxt(dir_bit+seq+'_qp'+str(qp)+'.txt', totalResult, fmt = '%.5f')            
+    np.savetxt(dir_bit+seq+'_qp'+str(qp)+'_th'+str(thresh)+'.txt', totalResult, fmt = '%.5f')            
 
 

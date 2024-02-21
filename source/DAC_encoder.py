@@ -1,6 +1,7 @@
 import os
 import time
 import torch
+import imageio
 import numpy as np
 from copy import copy
 from GFVC.utils import *
@@ -35,12 +36,10 @@ class DACKPEncoder:
     
     def encode_kp(self,kp_list:List[str], frame_idx:int):
         ### residual
-        kp_difference=(np.array(kp_list)-np.array(self.rec_sem[frame_idx-1])).tolist()
+        kp_difference=(np.array(kp_list)-np.array(self.rec_sem[-1])).tolist()
         ## quantization
 
-        kp_difference=[i*self.q_step for i in kp_difference]
-        kp_difference= list(map(round, kp_difference[:]))
-
+        kp_difference=[int(i) for i in np.round(np.array(kp_difference)*self.q_step)]
         bin_file=self.kp_output_dir+'/frame'+str(frame_idx).zfill(4)+'.bin'
 
         final_encoder_expgolomb(kp_difference,bin_file)     
@@ -53,9 +52,9 @@ class DACKPEncoder:
 
         ### (i)_th frame + (i+1-i)_th residual =(i+1)_th frame
 
-        kp_difference_dec=[i/self.q_step for i in kp_difference_dec]
+        kp_difference_dec=np.array(kp_difference_dec)/self.q_step
 
-        kp_integer,kp_value=listformat_kp_DAC(self.rec_sem[frame_idx-1], kp_difference_dec) #######
+        kp_integer,kp_value=listformat_kp_DAC(self.rec_sem[-1], kp_difference_dec) #######
         self.rec_sem.append(kp_integer)
   
         kp_inter_frame={}
@@ -102,7 +101,7 @@ class DAC:
         pred_quality = self.metric.calc(inter_frame,prediction)
         self.avg_quality.update(pred_quality)
         avg_quality = self.avg_quality.avg
-        # print(frame_idx,  anim_pred_quality, pred_quality)
+        # print(f"Frame {frame_idx}: Q =  {pred_quality} | AQ = {avg_quality}")
         # If the quality is above the current threshold then send keypoints 
         # else encode a new reference frame
         if self.adaptive_metric in ['psnr','ssim','ms_ssim','fsim'] and avg_quality >= self.thresh:
@@ -124,6 +123,7 @@ if __name__ == "__main__":
     parser.add_argument("--quantization_factor", default=64, type=int, help="the quantization factor for the residual conversion from float-type to int-type")
     parser.add_argument("--iframe_qp", default=42, help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
+    parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame coder [vtm | lic]")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=30, type=float,help="Reference selection threshold")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
@@ -141,6 +141,7 @@ if __name__ == "__main__":
     iframe_format = opt.iframe_format
     gop_size = opt.gop_size
     device = opt.device
+    thresh = int(opt.adaptive_thresh)
     
     if device =='cuda' and torch.cuda.is_available():
         cpu = False
@@ -159,10 +160,10 @@ if __name__ == "__main__":
 
     ###################
     start=time.time()
-    kp_output_path =model_dirname+'/kp/'+seq+'_qp'+str(qp)+'/'    #OutPut directory for motion keypoints
+    kp_output_path =model_dirname+'/kp/'+seq+'_qp'+str(qp)+'_th'+str(thresh)+'/'    #OutPut directory for motion keypoints
     os.makedirs(kp_output_path,exist_ok=True)                   
 
-    enc_output_path =model_dirname+'/enc/'+seq+'_qp'+str(qp)+'/' ## OutPut path for encoded reference frame     
+    enc_output_path =model_dirname+'/enc/'+seq+'_qp'+str(qp)+'_th'+str(thresh)+'/' ## OutPut path for encoded reference frame     
     os.makedirs(enc_output_path,exist_ok=True)                      
 
     listR,listG,listB=raw_reader_planar(original_seq,width, height,frames)
@@ -172,7 +173,7 @@ if __name__ == "__main__":
     sum_bits = 0
 
     #Reference image coder [VTM, LIC]
-    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name='vtm', device=device)
+    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name=opt.ref_codec, device=device)
     #Motion keypoints coding
     kp_coder = DACKPEncoder(kp_output_path,q_step, device=device)
 
@@ -185,15 +186,22 @@ if __name__ == "__main__":
 
     
     with torch.no_grad():
+        out_video = []
         for frame_idx in tqdm(range(0, frames)):            
             current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]]
+            cur_out = np.transpose(np.array(current_frame),[1,2,0])
             if frame_idx % gop_size == 0:      # I-frame      
                 reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
                 sum_bits+=ref_bits          
+                
                 if isinstance(reference, np.ndarray):
                     #convert to tensor
                     reference = torch.tensor(reference[np.newaxis].astype(np.float32))
                 reference = reference.to(device) 
+                ####
+                fr_eval = np.concatenate([cur_out,np.transpose(tensor2frame(reference),[1,2,0])],axis=1)
+                out_video.append(fr_eval)
+                #####
 
                 #Extract motion representation vectors [Keypoints | Compact features etc]
                 kp_reference =  enc_main.analysis_model(reference) ################ 
@@ -220,27 +228,39 @@ if __name__ == "__main__":
 
                 #Reconstruct the frame and evaluate quality
                 pred, encode_kp = enc_main.evaluate(inter_frame, rec_kp_frame, frame_idx)
+                ####
+                pred = np.transpose(tensor2frame(pred),[1,2,0])
+                out_video.append(np.concatenate([cur_out,pred],axis=1))
+                ### 
                 if encode_kp:
                     sum_bits += kp_bits
                 else:
                     #compress the current frame as a new reference frame
                     reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
-                    sum_bits+=ref_bits          
+                    # add new reference frame to total bits
+                    sum_bits += ref_bits 
+
                     if isinstance(reference, np.ndarray):
                         #convert to tensor
                         reference = torch.tensor(reference[np.newaxis].astype(np.float32))
                     reference = reference.to(device) 
-
+                    ####
+                    ref_out = np.transpose(tensor2frame(reference),[1,2,0])
+                    out_video[-1] = np.concatenate([cur_out,ref_out],axis=1) 
+                    ####
                     #Extract motion representation vectors [Keypoints | Compact features etc]
                     kp_reference =  enc_main.analysis_model(reference) ################ 
                     kp_value_frame = kp_coder.get_kp_list(kp_reference, frame_idx)
+                    
                     #append to list for use in predictively coding the next frame KPs
+                    kp_coder.rec_sem = [] #Purge the KP coding buffer
                     kp_coder.rec_sem.append(kp_value_frame) #NOTE: The KP reconstructed above before the evaluation was also added to the rec_sem buffer!
                     kp_coder.ref_frame_idx.append(frame_idx) #metadata for reference frame indices
                 
                     #update enc main with reference frame info
                     enc_main.reference_frame = reference
                     enc_main.kp_reference = kp_reference
+    imageio.mimsave(f"{enc_output_path}enc_video.mp4", out_video, fps=25.0)
     sum_bits+= kp_coder.encode_metadata()
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   
