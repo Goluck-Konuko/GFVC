@@ -1,0 +1,33 @@
+codec_name: 'HDAC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choose which GFVC model to be used.
+
+#dataset params 
+sequence_dir: '../dataset/'  ###You should download the testing sequence and modify the dir.
+seq_list: ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015'] #
+dataset: 'VOXCELEB'   ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
+num_frames: 250 #250 # 125  frames for 'CFVQA'
+gop_size: 250
+
+#video params   
+height: 256
+width: 256
+iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what color format to use for encoding the first frame.
+
+
+#codec params   
+inference_mode: 'encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+qp_list: [ "22"] #, "32", "42", "52"]  #<- VTM #["6","5","4","3"] # <-LIC
+quantization_factor: 128 #64 #Number of bins for KP coding
+adaptive_metric: "PSNR" #The metric used to select and store reference frames [PSNR, MS_SSIM,FSIM, LPIPS, DISTS]
+adaptive_thresh: 0 #Threshold value (depends on the metric)
+ref_codec: 'vtm' #Reference frame codec ['vtm'| 'lic']
+
+# => HDAC
+base_layer_params: #Parameters for base layer coder
+  use_base_layer: 'ON' #Set to 'OFF' to fall back to animation-only reconstruction
+  base_codec: 'hevc' #codec name [hevc | vvc]
+  qp: 51 #Base layer coding QP ["35","38","42","45","51"]
+  scale_factor: 1 #Set to fraction to downscale the base layer
+
+
+#evaluation params
+metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim','msVGG','vmaf']

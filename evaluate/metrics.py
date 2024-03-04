@@ -35,13 +35,16 @@ def raw_reader_planar(FileName, ImgWidth, ImgHeight, NumFramesToBeComputed):
      
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-c","--config", default="config/fomm.yaml", type=str, help="Path to codec configuration file")
+    parser.add_argument("-c","--config", default="config/cfte.yaml", type=str, help="Path to codec configuration file")
     opt = parser.parse_args()
     args = read_config_file(opt.config)
     
     seqlist= args['seq_list']
-
-    qplist= args['qp_list'] 
+    Model=args['codec_name']  ## 'FV2V' OR 'FOMM' OR 'CFTE'
+    if Model =='HDAC':
+        qplist = ["51","42","45","38","35"]
+    else:
+        qplist= args['qp_list'] 
 
     width=args['width']
     height=args['height']
@@ -50,11 +53,17 @@ if __name__ == "__main__":
     frames = args['num_frames']
    
     
-    Model=args['codec_name']  ## 'FV2V' OR 'FOMM' OR 'CFTE'
+    
     Iframe_format=args['iframe_format']   ## 'YUV420'  OR 'RGB444'
+
+    if Model =='DAC':
+        thresh = int(args['adaptive_thresh'])
     
     if Model in ['HEVC', 'VVC']:
         result_dir = './experiment/'+Model+'/'+Iframe_format+'/evaluation/'
+    elif Model in ['HDAC']:
+        bl_codec = args['base_layer_params']['base_codec'].upper()
+        result_dir = './experiment/'+f"{Model}_{bl_codec}"+'/Iframe_'+Iframe_format+'/evaluation/' 
     else:
         result_dir = './experiment/'+Model+'/Iframe_'+Iframe_format+'/evaluation/'
 
@@ -77,12 +86,16 @@ if __name__ == "__main__":
                 os.makedirs(result_dir) 
 
             ### You should modify the path of original sequence and reconstructed sequence
-            f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
+            # f_org=open('./dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb','rb')
             f_org_path = './dataset/'+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb'
             org_seq = raw_reader_planar(f_org_path,width,height,frames)
             
             if Model in ['HEVC','VVC']:
                 f_test_path = './experiment/'+Model+'/'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_QP'+str(qp)+'.rgb'
+            elif Model in ['HDAC']:
+                f_test_path = './experiment/'+f"{Model}_{bl_codec}"+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp22'+'_th'+str(qp)+'.rgb'
+            elif Model in ['DAC']:
+                f_test_path = './experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'_th'+str(thresh)+'.rgb'
             else:
                 f_test_path = './experiment/'+Model+'/'+'Iframe_'+Iframe_format+'/dec/'+testingdata_name+'_'+str(seq)+'_256x256_25_8bit_444_qp'+str(qp)+'.rgb'
             dec_seq = raw_reader_planar(f_test_path,width,height,frames)
@@ -91,7 +104,10 @@ if __name__ == "__main__":
             output_files = {}
             accumulated_metrics = {}
             for m in monitor.metrics:
-                mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_qp'+str(qp)+f'_{m}.txt'
+                if Model == 'DAC':
+                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_qp'+str(qp)+f'_th_{thresh}'+f'_{m}.txt'
+                else:
+                    mt_out_path = result_dir+testingdata_name+'_'+str(seq)+'_qp'+str(qp)+f'_{m}.txt'
                 output_files.update({m:open(mt_out_path,'w')})
                 accumulated_metrics.update({m:0})
 
@@ -130,6 +146,8 @@ if __name__ == "__main__":
     for m in monitor.metrics:
         if Model in ['RDAC']:
             mt_path = result_dir+testingdata_name+f"_result_rqp_{args['residual_coding_params']['rate_idx']}_{m}.txt"
+        elif Model in ['DAC']:
+            mt_path = result_dir+testingdata_name+f"_result_th_{thresh}_{m}.txt"
         else:
             mt_path = result_dir+testingdata_name+f'_result_{m}.txt'
         np.savetxt(mt_path, total_result[f"totalResult_{m.upper()}"], fmt = '%.5f')

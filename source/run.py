@@ -17,6 +17,7 @@ if __name__ == "__main__":
     
     #[ "22", "32", "42", "52"]
     qplist= args['qp_list'] 
+    ref_codec = args['ref_codec']
 
     #You should download the testing sequence and modify the dir.
     Sequence_dir=args['sequence_dir'] 
@@ -30,8 +31,6 @@ if __name__ == "__main__":
     height=args['height'] #256
     width=args['width'] #256
 
-    
-    
 
 
     #'FV2V' OR 'FOMM' OR 'CFTE' ###You should choose which GFVC model to be used.
@@ -46,14 +45,13 @@ if __name__ == "__main__":
     for qp in qplist:
         for seq in tqdm(seqlist):
             original_seq=Sequence_dir+testingdata_name+'_'+str(seq)+'_'+str(width)+'x'+str(height)+'_25_8bit_444.rgb'
-            cmd = "./run.sh "+model_name+" "+coding_mode+" "+original_seq+" "+str(frames)+" "+str(quantization_factor)+" "+str(qp)+" "+str(iframe_format)
-            if model_name in ['DAC','RDAC','RDACP']:
+            cmd = "./run.sh "+model_name+" "+coding_mode+" "+original_seq+" "+str(frames)+" "+str(quantization_factor)+" "+str(qp)+" "+str(iframe_format) +" "+ref_codec
+            if model_name in ['DAC','RDAC','HDAC']:
                 cmd += " " + args['adaptive_metric'] + " " + str(args['adaptive_thresh'])
-            if model_name in ['RDAC','RDACP']:
+            if model_name in ['RDAC']:
                 cmd += " " + str(args['residual_coding_params']['rate_idx']) + " " + str(args['residual_coding_params']['int_value'])
-            if model_name in ['RDACP']:
-                cmd += " " + str(args['residual_coding_params']['kp_deform']) + " " + str(args['residual_coding_params']['bm_deform'])
-            
+            if model_name in ['HDAC']:
+                cmd += " "+ args['base_layer_params']['use_base_layer'] + " "+ args['base_layer_params']['base_codec'] + " "+ str(args['base_layer_params']['qp']) + " " + str(args['base_layer_params']['scale_factor'])
             cmd += " "+str(gop_size)
             os.system(cmd)  
             print(model_name+"_"+coding_mode+"_"+seq+"_"+str(qp)+" Finished")

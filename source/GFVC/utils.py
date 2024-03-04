@@ -77,8 +77,8 @@ def yuv420_to_rgb444(yuvfilename, W, H, startframe, totalframe, show=False, out=
                 plt.pause(5)
             if out:
                 outname = yuvfilename[:-4]+'_'+str(startframe+i)+'.png'
-                cv2.imwrite(outname,oneframe_RGB[:,:,::-1])
-            arr[i] = oneframe_RGB
+                cv2.imwrite(outname,oneframe_RGB)
+            arr[i] = cv2.cvtColor(oneframe_RGB,cv2.COLOR_BGR2RGB)
     return arr
 
 
@@ -131,7 +131,7 @@ class ReferenceImageCoder:
         self.codec_name = codec_name
         self.device = device
         if self.codec_name == 'lic':
-            self.lic_enc = LICEnc(self.img_output_dir,model_name=model_name, quality=int(self.qp), device=self.device)
+            self.lic_enc = LICEnc(self.img_output_dir,model_name=model_name, quality=int(self.qp))
         else:
             self.lic_enc = None
 
@@ -145,10 +145,9 @@ class ReferenceImageCoder:
         bits=os.path.getsize(bin_file)*8
         
         #  read the rec frame (yuv420) and convert to rgb444
-        rec_ref_yuv=yuv420_to_rgb444(self.img_output_dir+'frame'+frame_idx_str+'_rec.yuv', self.width, self.height, 0, 1, False, False) 
-        img_rec = rec_ref_yuv[0]
-        img_rec = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
-        img_rec = resize(img_rec, (3, self.height, self.width))    # normlize to 0-1  
+        rec_ref_rgb=yuv420_to_rgb444(self.img_output_dir+'frame'+frame_idx_str+'_rec.yuv', self.width, self.height, 0, 1, False, False) 
+        img_rec = rec_ref_rgb[0]
+        img_rec = img_rec
         return img_rec, bits               
     
     def vtm_rgb_compress(self, frame_idx_str)->tuple:
@@ -186,8 +185,7 @@ class ReferenceImageCoder:
                 raise NotImplementedError(f"Coding in format {self.frame_format} not implemented")
         else:
             ref = torch.tensor(np.array(reference_frame)/255.0, dtype=torch.float32).unsqueeze(0)
-            ref_img = ref.to(self.device)
-            dec_info = self.lic_enc.compress(ref_img, frame_idx_str)
+            dec_info = self.lic_enc.compress(ref, frame_idx_str)
             img_rec = dec_info['x_hat']
             bits = dec_info['bits']
         return img_rec, bits
@@ -215,9 +213,8 @@ class RefereceImageDecoder:
         bits=os.path.getsize(bin_file)*8
 
         #  read the rec frame (yuv420) and convert to rgb444
-        rec_ref_yuv=yuv420_to_rgb444(self.img_input_dir+'frame'+str(frame_idx)+'_dec.yuv', self.width, self.height, 0, 1, False, False) 
-        img_rec = rec_ref_yuv[0]                   
-        return img_rec, bits                                    
+        rec_ref_yuv=yuv420_to_rgb444(self.img_input_dir+'frame'+str(frame_idx)+'_dec.yuv', self.width, self.height, 0, 1, False, False)                  
+        return rec_ref_yuv[0]  , bits                                    
 
     def vtm_rgb_decompress(self, frame_idx:int):
         os.system("./image_codecs/vtm/decode_rgb444.sh "+self.img_input_dir+'frame'+str(frame_idx))
@@ -238,7 +235,7 @@ class RefereceImageDecoder:
             else:
                 raise NotImplementedError(f"Frame format '{self.iframe_format}' not implemented!")
         else:
-            dec_info = self.lidec.decompress(frame_idx_str)
+            dec_info = self.lic_dec.decompress(frame_idx_str)
             img_rec = dec_info['x_hat']
             bits = dec_info['bits']
         return img_rec, bits

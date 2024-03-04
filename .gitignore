@@ -6,7 +6,7 @@ logs_slurm/*
 *.slurm
 
 
-source/GFVC/*/checkpoint/*.pth.tar
+source/GFVC/*/checkpoint/
 
 config/rdacp*
 source/RDACP*
@@ -16,12 +16,15 @@ source/GFVC/RDACP*
 source/CDAC*
 source/GFVC/CDAC
 
-# results/
+# rd_results/
 
 evaluate/eval_utils/vmaf*
 evaluate/rdac_ablation*
 
 script*
+
+# source/GFVC/HDAC/bl_codecs/HEVC_HM_16_15
+# source/GFVC/HDAC/bl_codecs/VVC_VTM_22_2
 
 
 
