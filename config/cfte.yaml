@@ -5,18 +5,18 @@ sequence_dir: '../dataset/'  ###You should download the testing sequence and mod
 seq_list: ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015']
 dataset: 'VOXCELEB' ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
 num_frames: 250 # 125  frames for 'CFVQA'
-gop_size: 64
+gop_size: 250
 
 #video params   
 height: 256
 width: 256
 iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what color format to use for encoding the first frame.
 
-
 #codec params   
-inference_mode: 'decoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+inference_mode: 'encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
 qp_list: [ "22", "32", "42", "52"]
 quantization_factor: 4 #Number of bins for KP coding
+ref_codec: 'vtm'
 
 #evaluation params
 metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim','msVGG','vmaf']

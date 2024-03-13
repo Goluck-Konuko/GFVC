@@ -14,9 +14,10 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 
 #codec params   
-inference_mode: 'decoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: [ "22", "32", "42",'52']
+inference_mode: 'encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
+qp_list: [ "22", "32", "42",'52'] #Reference frame QPs
 quantization_factor: 64 #Number of bins for KP coding
+num_kp: 10 #available models ==> 10, 20, 40
 adaptive_metric: "PSNR" #The metric used to select and store reference frames [PSNR, MS_SSIM,FSIM, LPIPS, DISTS]
 adaptive_thresh: 0 #Threshold value (depends on the metric)
 ref_codec: 'vtm' #Reference frame codec ['vtm'| 'lic']

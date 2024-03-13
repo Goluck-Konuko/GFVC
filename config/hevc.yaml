@@ -3,8 +3,8 @@ codec_name: 'HEVC'             ## 'FV2V' OR 'FOMM' OR 'CFTE' ###You should choos
 #dataset params 
 sequence_dir: '../../dataset/'  ###You should download the testing sequence and modify the dir.
 seq_list: ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015']
-dataset: 'CFVQA' ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
-num_frames: 125 # 125  frames for 'CFVQA'
+dataset: 'VOXCELEB'  ## 'CFVQA' OR 'VOXCELEB'  ###You should choose which dataset to be encoded.
+num_frames: 250 # 125  frames for 'CFVQA'
 
 
 #video params   
@@ -15,8 +15,7 @@ iframe_format: 'YUV420'   ## 'YUV420'  OR 'RGB444' ###You need to define what co
 
 #codec params   
 inference_mode: 'Encoder'           ## "Encoder" OR 'Decoder'   ###You need to define whether to encode or decode a sequence.
-qp_list: ["28","32","35","38","42","45","51"] #
-quantization_factor: 64 #Number of bins for KP coding
+qp_list: ["32","35","38","42","45","51"] #
 
 #evaluation params
 metrics: ['psnr','fsim','lpips','dists','ms_ssim','ssim','msVGG','vmaf']
