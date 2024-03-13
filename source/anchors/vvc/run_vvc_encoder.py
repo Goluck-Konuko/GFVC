@@ -73,7 +73,6 @@ if __name__ == "__main__":
                 subprocess.call(["./vvc/encode_yuv420.sh",str(qp),str(frames),str(width),str(height),oriyuv_path, enc_dir, test_dataset+'_'+seq,'&'])   
                 ########################       
                 print(seq+"_"+qp+" submited")
-                # break
-            # break
+                
 
                 

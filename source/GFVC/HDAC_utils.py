@@ -33,10 +33,11 @@ def load_hdac_checkpoints(config_path, checkpoint_path, device='cpu'):
     return kp_detector,generator
 
 class KPEncoder:
-    def __init__(self,kp_output_dir:str, q_step:int=64, device='cpu'):
+    def __init__(self,kp_output_dir:str, q_step:int=64,num_kp=10, device='cpu'):
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
         self.device = device
+        self.num_kp = num_kp
         self.rec_sem = []
         self.ref_frame_idx = []
 
@@ -80,7 +81,7 @@ class KPEncoder:
   
         kp_inter_frame={}
         kp_value=json.loads(kp_value)
-        kp_current_value=torch.Tensor(kp_value).reshape((1,10,2)).to(self.device)          
+        kp_current_value=torch.Tensor(kp_value).reshape((1,self.num_kp,2)).to(self.device)          
         kp_inter_frame['value']=kp_current_value  
         #reconstruct the KPs 
         return kp_inter_frame, bits
@@ -95,10 +96,11 @@ class KPEncoder:
         return bits
   
 class KPDecoder:
-    def __init__(self, kp_output_dir:str, q_step:int=64, device='cpu') -> None:
+    def __init__(self, kp_output_dir:str, q_step:int=64,num_kp=10, device='cpu') -> None:
         self.device= device
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
+        self.num_kp = num_kp
 
         #coding info
         self.rec_sem=[]
@@ -116,28 +118,7 @@ class KPDecoder:
         kp_value_frame=json.loads(kp_value_list)###20
         kp_value_frame= eval('[%s]'%repr(kp_value_frame).replace('[', '').replace(']', ''))
         return kp_value_frame
-    
-    # def decode_kp(self, frame_idx: int)->None:
-    #     frame_index=str(frame_idx).zfill(4)
-    #     bin_save=self.kp_output_dir+'/frame'+frame_index+'.bin'  
-    #     bits = os.path.getsize(bin_save)*8          
-    #     kp_dec = final_decoder_expgolomb(bin_save)
 
-    #     ## decoding residual
-    #     kp_difference = data_convert_inverse_expgolomb(kp_dec)
-    #     ## inverse quantization
-    #     kp_difference_dec=[i/self.q_step for i in kp_difference]
-    #     kp_difference_dec= eval('[%s]'%repr(kp_difference_dec).replace('[', '').replace(']', ''))  
-   
-    #     kp_previous= eval('[%s]'%repr(self.rec_sem[-1]).replace('[', '').replace(']', '').replace("'", ""))  
-
-    #     kp_integer,kp_value= listformat_kp_DAC(kp_previous, kp_difference_dec) #######
-    #     self.rec_sem.append(kp_integer)
-  
-    #     kp_value=json.loads(kp_value)
-    #     kp_target_value=torch.Tensor(kp_value).to(self.device)          
-    #     kp_target_decoded = {'value': kp_target_value.reshape((1,10,2))  }
-    #     return kp_target_decoded, bits
     
     def decode_kp(self,frame_idx:int):
         frame_idx=str(frame_idx).zfill(4)
@@ -157,7 +138,7 @@ class KPDecoder:
   
         kp_inter_frame={}
         kp_value=json.loads(kp_value)
-        kp_current_value=torch.Tensor(kp_value).reshape((1,10,2)).to(self.device)          
+        kp_current_value=torch.Tensor(kp_value).reshape((1,self.num_kp,2)).to(self.device)          
         kp_inter_frame['value']=kp_current_value  
         #reconstruct the KPs 
         return kp_inter_frame, bits

@@ -14,10 +14,11 @@ from typing import Dict, List
 
 
 class DACKPEncoder:
-    def __init__(self,kp_output_dir:str, q_step:int=64, device='cpu'):
+    def __init__(self,kp_output_dir:str, q_step:int=64,num_kp=10, device='cpu'):
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
         self.device = device
+        self.num_kp = num_kp
         self.rec_sem = []
         self.ref_frame_idx = []
 
@@ -59,7 +60,7 @@ class DACKPEncoder:
   
         kp_inter_frame={}
         kp_value=json.loads(kp_value)
-        kp_current_value=torch.Tensor(kp_value).reshape((1,10,2)).to(self.device)          
+        kp_current_value=torch.Tensor(kp_value).reshape((1,self.num_kp,2)).to(self.device)          
         kp_inter_frame['value']=kp_current_value  
         #reconstruct the KPs 
         return kp_inter_frame, bits
@@ -75,9 +76,9 @@ class DACKPEncoder:
   
 class DAC:
     '''DAC Encoder'''
-    def __init__(self, dac_config_path:str, dac_checkpoint_path:str,adaptive_metric='psnr',adaptive_thresh=20, device='cpu') -> None:
+    def __init__(self, dac_config_path:str, dac_checkpoint_path:str,adaptive_metric='psnr',adaptive_thresh=20,num_kp=10, device='cpu') -> None:
         self.device = device
-        dac_analysis_model, dac_synthesis_model = load_dac_checkpoints(dac_config_path, dac_checkpoint_path, device=device)
+        dac_analysis_model, dac_synthesis_model = load_dac_checkpoints(dac_config_path, dac_checkpoint_path,num_kp, device=device)
         self.analysis_model = dac_analysis_model.to(device)
         self.synthesis_model = dac_synthesis_model.to(device)
 
@@ -126,6 +127,7 @@ if __name__ == "__main__":
     parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame coder [vtm | lic]")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=30, type=float,help="Reference selection threshold")
+    parser.add_argument("--num_kp", default=10, type=int,help="Number of motion keypoints")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
@@ -142,17 +144,13 @@ if __name__ == "__main__":
     gop_size = opt.gop_size
     device = opt.device
     thresh = int(opt.adaptive_thresh)
-    
-    if device =='cuda' and torch.cuda.is_available():
-        cpu = False
-    else:
-        cpu = True
+    num_kp = int(opt.num_kp)
+
+    if not torch.cuda.is_available():
         device = 'cpu'
     
-
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
 
-    
     model_name = 'DAC' 
     model_dirname=f'../experiment/'+model_name+"/"+'Iframe_'+str(iframe_format)   
     
@@ -172,35 +170,41 @@ if __name__ == "__main__":
     seq_kp_integer = []
     sum_bits = 0
 
-    #Reference image coder [VTM, LIC]
+    # Reference image coder [VTM, LIC]
     ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name=opt.ref_codec, device=device)
-    #Motion keypoints coding
-    kp_coder = DACKPEncoder(kp_output_path,q_step, device=device)
+    
+    # Motion keypoints coding
+    kp_coder = DACKPEncoder(kp_output_path,q_step,num_kp=num_kp, device=device)
 
 
     #Main encoder models wrapper
     model_config_path= f'./GFVC/{model_name}/checkpoint/{model_name}-256.yaml'
-    model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'         
+    model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-{num_kp}-checkpoint.pth.tar'         
     enc_main = DAC(model_config_path, model_checkpoint_path,
-                   opt.adaptive_metric,opt.adaptive_thresh,device=device)
+                   opt.adaptive_metric,opt.adaptive_thresh,num_kp=num_kp,device=device)
 
     
     with torch.no_grad():
         out_video = []
         for frame_idx in tqdm(range(0, frames)):            
             current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]]
-            cur_out = np.transpose(np.array(current_frame),[1,2,0])
+            cur_fr = np.transpose(np.array(current_frame),[1,2,0])
             if frame_idx % gop_size == 0:      # I-frame      
-                reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
+                reference, ref_bits = ref_coder.compress(current_frame, frame_idx)  
                 sum_bits+=ref_bits          
-                
                 if isinstance(reference, np.ndarray):
                     #convert to tensor
-                    reference = torch.tensor(reference[np.newaxis].astype(np.float32))
-                reference = reference.to(device) 
-                ####
-                fr_eval = np.concatenate([cur_out,np.transpose(tensor2frame(reference),[1,2,0])],axis=1)
-                out_video.append(fr_eval)
+                    out_fr = reference
+                    #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
+                    reference = frame2tensor(np.transpose(reference,[2,0,1]))
+                else:
+                    #When using LIC for reference compression we get back a tensor 1x3xHXW
+                    out_fr = np.transpose(tensor2frame(reference),[1,2,0])
+                
+                dec = np.concatenate([cur_fr, out_fr], axis=1)
+                out_video.append(dec)
+                
+                reference = reference.to(device)
                 #####
 
                 #Extract motion representation vectors [Keypoints | Compact features etc]
@@ -230,23 +234,24 @@ if __name__ == "__main__":
                 pred, encode_kp = enc_main.evaluate(inter_frame, rec_kp_frame, frame_idx)
                 ####
                 pred = np.transpose(tensor2frame(pred),[1,2,0])
-                out_video.append(np.concatenate([cur_out,pred],axis=1))
+                out_video.append(np.concatenate([cur_fr,pred],axis=1))
                 ### 
                 if encode_kp:
                     sum_bits += kp_bits
                 else:
                     #compress the current frame as a new reference frame
-                    reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
-                    # add new reference frame to total bits
-                    sum_bits += ref_bits 
-
+                    reference, ref_bits = ref_coder.compress(current_frame, frame_idx)  
+                    sum_bits+=ref_bits          
                     if isinstance(reference, np.ndarray):
                         #convert to tensor
-                        reference = torch.tensor(reference[np.newaxis].astype(np.float32))
-                    reference = reference.to(device) 
-                    ####
-                    ref_out = np.transpose(tensor2frame(reference),[1,2,0])
-                    out_video[-1] = np.concatenate([cur_out,ref_out],axis=1) 
+                        out_fr = reference
+                        #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
+                        reference = frame2tensor(np.transpose(reference,[2,0,1]))
+                    else:
+                        #When using LIC for reference compression we get back a tensor 1x3xHXW
+                        out_fr = np.transpose(tensor2frame(reference),[1,2,0])
+                    
+                    out_video[-1] = np.concatenate([cur_fr, out_fr], axis=1)
                     ####
                     #Extract motion representation vectors [Keypoints | Compact features etc]
                     kp_reference =  enc_main.analysis_model(reference) ################ 

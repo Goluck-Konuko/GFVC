@@ -39,17 +39,12 @@ class GeneratorHDAC(nn.Module):
         self.base_down_blocks = nn.ModuleList(base_down_blocks)
 
         #Multi-layer fusion blocks
-        self.fusion_bottleneck = kwargs['fusion_bottleneck']
         main_bottleneck = []
         in_features = block_expansion * (2 ** num_down_blocks)*2
-        if self.fusion_bottleneck =='res_blocks':
-            #Regular residual block architecture
-            for i in range(num_bottleneck_blocks):
-                main_bottleneck.append(ResBlock2d(in_features, kernel_size=(3, 3), padding=(1, 1)))
-        elif self.fusion_bottleneck == 'res_block_attn':
-            #Residual block with conv-based channel attention
-            for i in range(num_bottleneck_blocks):
-                main_bottleneck.append(ECABlock2d(in_features, kernel_size=(3, 3), padding=(1, 1)))
+
+        #Regular residual block architecture
+        for i in range(num_bottleneck_blocks):
+            main_bottleneck.append(ResBlock2d(in_features, kernel_size=(3, 3), padding=(1, 1)))
 
         self.main_bottleneck = nn.ModuleList(main_bottleneck)
         self.bt_output_layer = SameBlock2d(in_features, in_features//2, kernel_size=(3, 3), padding=(1, 1))

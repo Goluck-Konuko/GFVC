@@ -123,6 +123,7 @@ if __name__ == "__main__":
     parser.add_argument("--iframe_qp", default=42, help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
+    parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame codec [vtm | lic]")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
     opt = parser.parse_args()
@@ -148,7 +149,7 @@ if __name__ == "__main__":
     model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'         
     model_dirname='../experiment/'+model_name+"/"+'Iframe_'+str(iframe_format)   
             
-##########################
+    ##########################
     start=time.time()
 
     f_org=open(original_seq,'rb')
@@ -170,7 +171,7 @@ if __name__ == "__main__":
 
     #Initialize models and entropy coders
     #Reference image coder [VTM, LIC]
-    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name='vtm')
+    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name=opt.ref_codec)
 
     # motion entropy coder
     kp_coder = FV2VKPEncoder(kp_output_path,q_step=q_step)
@@ -180,11 +181,11 @@ if __name__ == "__main__":
     for frame_idx in tqdm(range(0, frames)):         
         current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]]   
         if frame_idx%gop_size == 0:      # I-frame      
-            reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
+            reference, ref_bits = ref_coder.compress(current_frame, frame_idx)  
             sum_bits+=ref_bits          
             if isinstance(reference, np.ndarray):
-                reference = torch.tensor(reference[np.newaxis].astype(np.float32))
-            reference = reference.to(device) 
+                reference = frame2tensor(np.transpose(reference,[2,0,1]))
+            reference = reference.to(device)
 
             head_pose_info = enc_main.estimator_model(reference)
             kp_list_frame = kp_coder.get_kp_list(head_pose_info, frame_idx)

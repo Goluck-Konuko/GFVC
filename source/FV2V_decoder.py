@@ -144,6 +144,7 @@ if __name__ == "__main__":
     parser.add_argument("--iframe_qp", default=42, help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
+    parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame codec [vtm | lic]")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
     opt = parser.parse_args()
@@ -190,7 +191,7 @@ if __name__ == "__main__":
 
     #Initialize entropy decoders and models
     #Reference Image Decoder
-    ref_decoder = RefereceImageDecoder(ref_input_path,qp)
+    ref_decoder = RefereceImageDecoder(ref_input_path,qp, dec_name=opt.ref_codec)
 
     #KP decoder
     kp_decoder = FV2VKPDecoder(kp_input_path, q_step=q_step, device=device)
@@ -199,17 +200,29 @@ if __name__ == "__main__":
     model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'         
     dec_main = FV2V(model_config_path, model_checkpoint_path, device=device)
 
-    output_video = []
+    out_video = []
     with torch.no_grad():
         for frame_idx in tqdm(range(frames)):            
             if frame_idx in kp_decoder.ref_frame_idx:      # I-frame  
-                img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
-                sum_bits+= ref_bits
-                #convert and save the decoded reference frame
-                output_video.append(img_rec[:,:,::-1])
-                img_rec_out = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
+                reference, ref_bits = ref_decoder.decompress(frame_idx)  
+                
+                sum_bits+=ref_bits          
+                if isinstance(reference, np.ndarray):
+                    #convert to tensor
+                    out_fr = reference
+                    img_rec_out = np.transpose(reference,[2,0,1])
+                    #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
+                    reference = frame2tensor(img_rec_out)
+                else:
+                    #When using LIC for reference compression we get back a tensor 1x3xHXW
+                    img_rec_out = tensor2frame(reference)
+                    out_fr = np.transpose(img_rec_out,[1,2,0])
+            
+                out_video.append(out_fr)
+                
+                reference = reference.to(device)
+
                 img_rec_out.tofile(f_dec)
-                                
                 reference = frame2tensor(img_rec_out).to(device) #resize(img_rec, (3, height, width))    # normalize to 0-1  
                 
                 kp_canonical = dec_main.detector_model(reference)  ####reference 
@@ -242,12 +255,12 @@ if __name__ == "__main__":
                 #Save to output file
                 pred.tofile(f_dec)             
                 #HxWx3 format
-                output_video.append(np.transpose(pred,[1,2,0]))                 
+                out_video.append(np.transpose(pred,[1,2,0]))                 
 
     f_dec.close()     
     end=time.time()                    
 
-    imageio.mimsave(dec_video_path_mp4,output_video, fps=25.0)
+    imageio.mimsave(dec_video_path_mp4,out_video, fps=25.0)
     print(seq+'_qp'+str(qp)+'.rgb',"success. Total time is %.4fs. Model inference time is %.4fs. Total bits are %d" %(end-start,gene_time,sum_bits))
     
     totalResult=np.zeros((1,3))

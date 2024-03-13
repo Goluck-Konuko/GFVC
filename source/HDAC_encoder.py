@@ -75,6 +75,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_codec", default='hevc', type=str,help="Base layer codec [hevc | vvc]")
     parser.add_argument("--bl_qp", default=50, type=int,help="QP value for encoding the base layer")
     parser.add_argument("--bl_scale_factor", default=1.0, type=float,help="subsampling factor for base layer frames")
+    parser.add_argument("--num_kp", default=10, type=int,help="Number of motion keypoints")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
@@ -91,6 +92,7 @@ if __name__ == "__main__":
     gop_size = opt.gop_size
     device = opt.device
     thresh = int(opt.adaptive_thresh)
+    num_kp = int(opt.num_kp)
 
     #base layer params
     use_base_layer = opt.use_base_layer
@@ -131,13 +133,13 @@ if __name__ == "__main__":
     #Reference image coder [VTM, LIC]
     ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name=opt.ref_codec, device=device)
     #Motion keypoints coding
-    kp_coder = KPEncoder(kp_output_path,q_step, device=device)
+    kp_coder = KPEncoder(kp_output_path,q_step,num_kp=num_kp, device=device)
 
     
 
     #Main encoder models wrapper
     model_config_path= f'./GFVC/{model_name}/checkpoint/{model_name}-256.yaml'
-    model_checkpoint_path= f'./GFVC/{model_name}/checkpoint/{model_name}_{bl_codec_name.upper()}.pth.tar'         
+    model_checkpoint_path= f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'         
     enc_main = HDAC(model_config_path, model_checkpoint_path,
                    opt.adaptive_metric,opt.adaptive_thresh,device=device)
 
@@ -164,21 +166,22 @@ if __name__ == "__main__":
             sum_bits += info_out['bits']
             enc_main.base_layer = bl_frames
     
-        print("Extracting animation keypoints")    
+        print("Extracting animation keypoints..")    
         for frame_idx in tqdm(range(0, frames)):            
             current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]]
             cur_out = np.transpose(np.array(current_frame),[1,2,0])
             if frame_idx == 0:      # I-frame      
-                img_rec, ref_bits = ref_coder.compress(current_frame, frame_idx)   
+                reference, ref_bits = ref_coder.compress(current_frame, frame_idx)  
                 sum_bits+=ref_bits          
-                
-                if isinstance(img_rec, np.ndarray):
+                if isinstance(reference, np.ndarray):
                     #convert to tensor
-                    out_fr = img_rec
-                    reference = frame2tensor(np.transpose(img_rec, [2,0,1]))
+                    out_fr = reference
+                    #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
+                    reference = frame2tensor(np.transpose(reference,[2,0,1]))
                 else:
-                    out_fr = np.tranpose(tensor2frame(img_rec),[1,2,0])
-                    reference = img_rec
+                    #When using LIC for reference compression we get back a tensor 1x3xHXW
+                    out_fr = np.transpose(tensor2frame(reference),[1,2,0])
+                
 
                 if use_base_layer=='ON':
                     bl_fr = np.transpose(enc_main.base_layer[frame_idx], [1,2,0])

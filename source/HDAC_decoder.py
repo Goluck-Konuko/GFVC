@@ -65,6 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_codec", default='hevc', type=str,help="Base layer codec [hevc | vvc]")
     parser.add_argument("--bl_qp", default=50, type=int,help="QP value for encoding the base layer")
     parser.add_argument("--bl_scale_factor", default=1.0, type=float,help="subsampling factor for base layer frames")
+    parser.add_argument("--num_kp", default=10, type=int,help="Number of motion keypoints")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
@@ -81,6 +82,7 @@ if __name__ == "__main__":
     device = opt.device
     gop_size = opt.gop_size
     thresh = int(opt.adaptive_thresh)
+    num_kp = int(opt.num_kp)
 
     #base layer params
     use_base_layer = opt.use_base_layer
@@ -96,7 +98,7 @@ if __name__ == "__main__":
     model_name = "HDAC"
 
     model_config_path= f'./GFVC/{model_name}/checkpoint/{model_name}-256.yaml'
-    model_checkpoint_path= f'./GFVC/{model_name}/checkpoint/{model_name}_{bl_codec_name.upper()}.pth.tar'  
+    model_checkpoint_path= f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'  
     model_dirname=f'../experiment/{model_name}_{bl_codec_name.upper()}/Iframe_{iframe_format}'  
     
     ###################################################
@@ -129,7 +131,7 @@ if __name__ == "__main__":
     ref_decoder = RefereceImageDecoder(ref_input_path,int(qp),dec_name=opt.ref_codec)
 
     # Keypoint Decoder
-    kp_decoder = KPDecoder(kp_input_path,q_step, device=device)
+    kp_decoder = KPDecoder(kp_input_path,q_step,num_kp=num_kp, device=device)
     sum_bits += kp_decoder.load_metadata()
     #Reconstruction models
     dec_main = HDAC(model_config_path, model_checkpoint_path,device=device)
@@ -152,20 +154,19 @@ if __name__ == "__main__":
 
         for frame_idx in tqdm(range(frames)):            
             if frame_idx in kp_decoder.ref_frame_idx:      # I-frame                      
-                img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
-                sum_bits+= ref_bits
-
-                #convert and save the decoded reference frame
-                if isinstance(img_rec, np.ndarray):
-                    out_fr = img_rec
-                    img_rec_out = img_rec.transpose(2, 0, 1)    # HxWx3
-                    #convert to tensor for animation
+                reference, ref_bits = ref_decoder.decompress(frame_idx)  
+                
+                sum_bits+=ref_bits          
+                if isinstance(reference, np.ndarray):
+                    #convert to tensor
+                    out_fr = reference
+                    img_rec_out = np.transpose(reference,[2,0,1])
+                    #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
                     reference = frame2tensor(img_rec_out)
                 else:
-                    out_fr = tensor2frame(img_rec)
-                    img_rec_out = out_fr.transpose(2, 0, 1) 
-                    #keep the tensor for animation
-                    reference = img_rec
+                    #When using LIC for reference compression we get back a tensor 1x3xHXW
+                    img_rec_out = tensor2frame(reference)
+                    out_fr = np.transpose(img_rec_out,[1,2,0])
                 
                 if use_base_layer == 'ON':
                     bl_fr = np.transpose(dec_main.base_layer[frame_idx],[1,2,0])
@@ -173,6 +174,7 @@ if __name__ == "__main__":
  
                 output_video.append(out_fr)
                 img_rec_out.tofile(f_dec)
+                
                 reference = reference.to(device) #resize(img_rec, (3, height, width))    # normalize to 0-1  
                 kp_reference = dec_main.analysis_model(reference) 
                 #update decoder with the reference frame info

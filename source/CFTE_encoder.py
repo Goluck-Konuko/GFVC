@@ -98,6 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("--quantization_factor", default=4, type=int, help="the quantization factor for the residual conversion from float-type to int-type")
     parser.add_argument("--iframe_qp", default=42, help="the quantization parameters for encoding the Intra frame")
     parser.add_argument("--iframe_format", default='YUV420', type=str,help="the quantization parameters for encoding the Intra frame")
+    parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame codec [vtm | lic]")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
         
@@ -113,10 +114,7 @@ if __name__ == "__main__":
     original_seq=opt.original_seq #path to video input video sequences
     gop_size = opt.gop_size
     device = opt.device
-    if device =='cuda' and torch.cuda.is_available():
-        cpu = False
-    else:
-        cpu = True
+    if not torch.cuda.is_available():
         device='cpu'
     
     seq = os.path.splitext(os.path.split(opt.original_seq)[-1])[0]
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     enc_main = CFTE(model_config_path, model_checkpoint_path, device=device)
     
     #Reference image coder [VTM, LIC]
-    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name='vtm', device=device)
+    ref_coder = ReferenceImageCoder(enc_output_path,qp,iframe_format,width,height,codec_name=opt.ref_codec, device=device)
 
     #Motion keypoints coding
     kp_coder = CFTEncoder(kp_output_path,q_step, device=device) #Compact feature encoder | similar to KP Encoder for DAC and FOMM
@@ -154,15 +152,16 @@ if __name__ == "__main__":
     start=time.time() 
 
     sum_bits = 0
+    out_video = []
     with torch.no_grad():
         for frame_idx in tqdm(range(0, frames)):       
             current_frame = [listR[frame_idx],listG[frame_idx],listB[frame_idx]]
+            cur_fr = np.transpose(np.array(current_frame),[1,2,0])
             if frame_idx%gop_size == 0:      # I-frame      
-                reference, ref_bits = ref_coder.compress(current_frame, frame_idx)   
+                reference, ref_bits = ref_coder.compress(current_frame, frame_idx)  
                 sum_bits+=ref_bits          
                 if isinstance(reference, np.ndarray):
-                    #convert to tensor
-                    reference = torch.tensor(reference[np.newaxis].astype(np.float32))
+                    reference = frame2tensor(np.transpose(reference,[2,0,1]))
                 reference = reference.to(device)
 
                 #Extract motion representation vectors [Keypoints | Compact features etc]
@@ -188,7 +187,6 @@ if __name__ == "__main__":
                 #Encode to binary string
                 rec_kp_frame, kp_bits = kp_coder.encode_kp(kp_frame, frame_idx)
                 sum_bits += kp_bits  
-
     sum_bits+= kp_coder.encode_metadata()
     end=time.time()
     print("Extracting kp success. Time is %.4fs. Key points coding %d bits." %(end-start, sum_bits))   

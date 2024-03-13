@@ -16,9 +16,10 @@ from copy import copy
 
 
 class DACKPDecoder:
-    def __init__(self,kp_output_dir:str, q_step:int=64):
+    def __init__(self,kp_output_dir:str, q_step:int=64,num_kp=10):
         self.kp_output_dir = kp_output_dir
         self.q_step = q_step
+        self.num_kp = num_kp
         self.rec_sem = []
         self.ref_frame_idx = []
 
@@ -52,7 +53,7 @@ class DACKPDecoder:
   
         kp_inter_frame={}
         kp_value=json.loads(kp_value)
-        kp_current_value=torch.Tensor(kp_value).reshape((1,10,2)).to(device)          
+        kp_current_value=torch.Tensor(kp_value).reshape((1,self.num_kp,2)).to(device)          
         kp_inter_frame['value']=kp_current_value  
         return kp_inter_frame, bits
     
@@ -65,16 +66,16 @@ class DACKPDecoder:
   
 class DAC:
     '''DAC Decoder models'''
-    def __init__(self, dac_config_path:str, dac_checkpoint_path:str, device='cpu') -> None:
+    def __init__(self, dac_config_path:str, dac_checkpoint_path:str,num_kp=10, device='cpu') -> None:
         self.device = device
-        dac_analysis_model, dac_synthesis_model = load_dac_checkpoints(dac_config_path, dac_checkpoint_path, device=device)
+        dac_analysis_model, dac_synthesis_model = load_dac_checkpoints(dac_config_path, dac_checkpoint_path,num_kp, device=device)
         self.analysis_model = dac_analysis_model.to(device)
         self.synthesis_model = dac_synthesis_model.to(device)
 
         self.reference_frame = None
         self.kp_reference = None
 
-    def generate_frame(self,kp_inter_frame:Dict[str, torch.Tensor], relative=False,adapt_movement_scale=False)->torch.Tensor:
+    def predict_inter_frame(self,kp_inter_frame:Dict[str, torch.Tensor])->torch.Tensor:
         prediction = self.synthesis_model.animate(self.reference_frame,self.kp_reference, kp_inter_frame)
         return prediction
 
@@ -92,6 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--ref_codec", default='vtm', type=str,help="Reference frame coder [vtm | lic]")
     parser.add_argument("--adaptive_metric", default='PSNR', type=str,help="RD adaptation metric (for selecting reference frames to keep in buffer)")
     parser.add_argument("--adaptive_thresh", default=30, type=float,help="Reference selection threshold")
+    parser.add_argument("--num_kp", default=10, type=int,help="Number of motion keypoints")
     parser.add_argument("--gop_size", default=32, type=int,help="Max number of of frames to animate from a single reference")
     parser.add_argument("--device", default='cuda', type=str,help="execution device: [cpu, cuda]")
     
@@ -108,6 +110,7 @@ if __name__ == "__main__":
     device = opt.device
     gop_size = opt.gop_size
     thresh = int(opt.adaptive_thresh)
+    num_kp = opt.num_kp
 
     if not torch.cuda.is_available():
         device = 'cpu'
@@ -116,7 +119,7 @@ if __name__ == "__main__":
     model_name = "DAC"
 
     model_config_path=f'./GFVC/{model_name}/checkpoint/{model_name}-256.yaml'
-    model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-checkpoint.pth.tar'          
+    model_checkpoint_path=f'./GFVC/{model_name}/checkpoint/{model_name}-{num_kp}-checkpoint.pth.tar'          
     model_dirname=f'../experiment/{model_name}/Iframe_{iframe_format}'  
     
 ###################################################
@@ -148,27 +151,32 @@ if __name__ == "__main__":
     ref_decoder = RefereceImageDecoder(ref_input_path,int(qp),dec_name=opt.ref_codec)
 
     # Keypoint Decoder
-    kp_decoder = DACKPDecoder(kp_input_path,q_step)
+    kp_decoder = DACKPDecoder(kp_input_path,q_step,num_kp=num_kp)
     sum_bits += kp_decoder.load_metadata()
     #Reconstruction models
-    dec_main = DAC(model_config_path, model_checkpoint_path,device=device)
+    dec_main = DAC(model_config_path, model_checkpoint_path,num_kp=num_kp,device=device)
     
-    output_video = [] #Output an mp4 video for sanity check
+    out_video = [] #Output an mp4 video for sanity check
     with torch.no_grad():
         for frame_idx in tqdm(range(0, frames)):            
             if frame_idx in kp_decoder.ref_frame_idx:      # I-frame                      
-                img_rec, ref_bits = ref_decoder.decompress(frame_idx) 
-                sum_bits+= ref_bits
-                #convert and save the decoded reference frame
-                if isinstance(img_rec, np.ndarray):
-                    output_video.append(img_rec[:,:,::-1])
-                    img_rec_out = img_rec[:,:,::-1].transpose(2, 0, 1)    # HxWx3
+                reference, ref_bits = ref_decoder.decompress(frame_idx)  
+                
+                sum_bits+=ref_bits          
+                if isinstance(reference, np.ndarray):
+                    #convert to tensor
+                    out_fr = reference
+                    img_rec_out = np.transpose(reference,[2,0,1])
+                    #convert the HxWx3 (uint8)-> 1x3xHxW (float32) 
                     reference = frame2tensor(img_rec_out)
                 else:
-                    img_rec_out = tensor2frame(img_rec)
-                    output_video.append(np.transpose(img_rec_out, [1,2,0]))
-                    reference = img_rec
+                    #When using LIC for reference compression we get back a tensor 1x3xHXW
+                    img_rec_out = tensor2frame(reference)
+                    out_fr = np.transpose(img_rec_out,[1,2,0])
+            
+                out_video.append(out_fr)
                 
+                reference = reference.to(device)
                 img_rec_out.tofile(f_dec)
                 
                 reference = reference.to(device) #resize(img_rec, (3, height, width))    # normalize to 0-1  
@@ -190,7 +198,7 @@ if __name__ == "__main__":
                 
                 # Inter_frame reconstruction through animation
                 gene_start = time.time()
-                predicted_frame  = dec_main.generate_frame(dec_kp_inter_frame)
+                predicted_frame  = dec_main.predict_inter_frame(dec_kp_inter_frame)
 
                 gene_end = time.time()
                 gene_time += gene_end - gene_start
@@ -198,12 +206,11 @@ if __name__ == "__main__":
                 #Save to output file
                 pred.tofile(f_dec)             
                 #HxWx3 format
-                output_video.append(np.transpose(pred,[1,2,0]))                 
+                out_video.append(np.transpose(pred,[1,2,0]))                 
 
     f_dec.close()     
     end=time.time()
-    print(len(output_video))
-    imageio.mimsave(dec_sequence_path_mp4,output_video, fps=25.0)
+    imageio.mimsave(dec_sequence_path_mp4,out_video, fps=25.0)
     print(seq+'_qp'+str(qp)+'.rgb',"success. Total time is %.4fs. Model inference time is %.4fs. Total bits are %d" %(end-start,gene_time,sum_bits))
     
     totalResult=np.zeros((1,3))
