@@ -8,9 +8,9 @@ logs_slurm/*
 
 source/GFVC/*/checkpoint/
 
-config/rdacp*
-source/RDACP*
-source/GFVC/RDACP*
+config/rdac*
+source/RDAC*
+source/GFVC/RDAC*
 
 *cdac*
 source/CDAC*
