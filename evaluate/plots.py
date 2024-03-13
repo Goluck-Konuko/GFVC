@@ -77,7 +77,7 @@ class Plotter:
             for codec in codecs:
                 br, m_data = [], []
                 qp_list = codec_data[codec].qps
-                if codec in ['hevc', 'vvc','hevc_new','vvc_new']:
+                if codec in ['hevc', 'vvc']:
                     br = codec_data[codec].data['bitrate']
                     for q in qp_list:
                         m = codec_data[codec].data[q][metric]
@@ -103,7 +103,7 @@ class Plotter:
         
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--codecs", default="cfte,fv2v,dac,hevc,vvc,hdac_hevc,hdac_vvc", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
+    parser.add_argument("--codecs", default="cfte,fv2v,dac,dac_20,dac_40", type=lambda x: list(map(str, x.split(','))), help="codecs to evaluate")
     parser.add_argument("--metrics", default="psnr,ssim,ms_ssim,fsim,lpips,dists,msVGG,vmaf", type=lambda x: list(map(str, x.split(','))), help="metrics to be evaluated")
     parser.add_argument("--qps", default="32,35,38,42,45,51", type=lambda x: list(map(int, x.split(','))), help="QP points on the RD curve")
     parser.add_argument('--dataset_name', default='voxceleb', type=str, help="Name of the evaluation dataset [voxceleb | cfvqa]")
@@ -115,17 +115,13 @@ if __name__ == "__main__":
 
     codec_params = {'metrics':args.metrics, 'iframe_format':args.format, 'dataset_name': args.dataset_name.upper(), 'rate_idx':args.rate_idx}
     for codec in args.codecs:
-        if codec in ['fv2v','cfte','fomm','dac']:
+        if codec in ['fv2v','cfte','fomm','dac','dac_20','dac_40']:
             #Reference frame QP values
             qp_list = ['22',"32","42",'52']
         elif 'hdac' in codec:
             qp_list = ["35","38","42","45","51"]
         elif codec in ['vvc', 'hevc']:
-            qp_list =  ["22","32","42","51"] 
-        elif codec == 'vvc_new':
-            qp_list = ["32","35","38","42","45","51"]
-        elif codec == 'hevc_new':
-            qp_list = ["32","35","38","42","45","51"]
+            qp_list =  ["32","35","38","42","45","51"] # OLD CTC QPS ["22","32","42","51"] 
         elif codec in ['rdac','rdacp']:
             # RD index for residual coding
             qp_list = [0,1,2,3]
@@ -134,13 +130,11 @@ if __name__ == "__main__":
             qp_list = args.qps
         codec_params.update({'qps': qp_list})
         path = f"experiment/{codec.upper()}/evaluation"
-        if  codec in ['hevc','hevc_new','vvc','vvc_new']:
+        if  codec in ['hevc','vvc']:
             data_handler = AnchorDataHandler
-        elif codec in ['rdac','rdacp']:
-            data_handler = RDACDataHandler
         elif 'hdac' in codec:
             data_handler = HDACDataHandler
-        elif codec in ['dac']:
+        elif codec in ['dac','dac_10','dac_20','dac_40']:
             data_handler = DACDataHandler
         else:
             data_handler = GFVCDataHandler
@@ -150,13 +144,4 @@ if __name__ == "__main__":
     dataset_name = args.dataset_name.upper()
     output_path = f"experiment/PLOTS/{dataset_name}"
     plotter = Plotter(out_path=output_path,codecs=args.codecs,metrics=args.metrics, qps=args.qps)
-    # plotter.plot_temporal_comparison(codec_data)
     plotter.plot_rd_comparison(codec_data)
-    
-
-    # all_metrics = {}
-    # for codec in codec_data:
-    #     all_metrics[codec] = codec_data[codec].data
-    # import json  
-    # with open(f"experiment/PLOTS/{dataset_name}_baseline_metrics_1.json", 'w') as out:
-    #     json.dump(all_metrics, out)
